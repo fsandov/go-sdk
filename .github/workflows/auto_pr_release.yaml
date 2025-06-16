@@ -60,7 +60,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               head: `${context.repo.owner}:${branchName}`,
-              base: 'master',
+              base: 'main',
               title: `[Release] Version ${{ env.VERSION }}`,
               body: `This PR is to release version ${{ env.VERSION }}.`,
             });

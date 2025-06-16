@@ -55,7 +55,7 @@ jobs:
           issue-number: ${{ github.event.pull_request.number }}
           token: ${{ secrets.TOKEN_ACTIONS }}
           body: |
-            ### Hispano Release Information - [${{ github.repository }}](https://github.com/${{ github.repository }})
+            ### Release Information - [${{ github.repository }}](https://github.com/${{ github.repository }})
             A new release has been created with the following details:
             - **Changes**: Refer to the [PR description](${{ github.event.pull_request.html_url }}) for detailed information.
             - **Version**: [Release v${{ env.VERSION }}](https://github.com/${{ github.repository }}/releases/tag/v${{ env.VERSION }})
@@ -70,8 +70,8 @@ jobs:
           REPO_URL="https://github.com/${{ github.repository }}"
           DISCORD_MESSAGE=$(cat <<EOF
           {
-            "content": "### Hispano Release Information - [${{ github.repository }}]($REPO_URL)\nA new release has been created with the following details:\n- **Version**: v$VERSION\n- **Changes**: Refer to the [PR description](${{ github.event.pull_request.html_url }}) for detailed information.\n- **Version Link**: [Release v$VERSION](https://github.com/${{ github.repository }}/releases/tag/v$VERSION)\n- **Discord Notification**: Sent\n\nThank you for your contributions! 🚀",
-            "username": "Hispano Release Bot"
+            "content": "### Release Information - [${{ github.repository }}]($REPO_URL)\nA new release has been created with the following details:\n- **Version**: v$VERSION\n- **Changes**: Refer to the [PR description](${{ github.event.pull_request.html_url }}) for detailed information.\n- **Version Link**: [Release v$VERSION](https://github.com/${{ github.repository }}/releases/tag/v$VERSION)\n- **Discord Notification**: Sent\n\nThank you for your contributions! 🚀",
+            "username": "Release Bot"
           }
           EOF
           )
