@@ -1,0 +1,66 @@
+name: Auto Pull Request New Release
+
+on:
+  push:
+    branches:
+      - 'release/*'
+
+jobs:
+  backport:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ github.ref }}
+
+      - name: Extract version from branch name
+        id: extract_version
+        run: |
+          BRANCH_NAME=${{ github.ref }}
+          if [[ "$BRANCH_NAME" =~ ^refs/heads/release\/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            VERSION=${BRANCH_NAME#refs/heads/release/}
+            echo "VERSION=$VERSION" >> $GITHUB_ENV
+          else
+            echo "Branch name does not match the release pattern."
+            exit 1
+          fi
+
+      - name: Set up Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Check for existing Pull Request
+        id: check_pr
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const branchName = '${{ github.event.ref }}'.replace('refs/heads/', '');
+            const { data: pullRequests } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              head: `${context.repo.owner}:${branchName}`
+            });
+            return pullRequests.length > 0
+
+      - name: Create Pull Request
+        id: create_pr
+        if: steps.check_pr.outputs.result == 'false'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const branchName = '${{ github.event.ref }}'.replace('refs/heads/', '');
+            const response = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${branchName}`,
+              base: 'master',
+              title: `[Release] Version ${{ env.VERSION }}`,
+              body: `This PR is to release version ${{ env.VERSION }}.`,
+            });
