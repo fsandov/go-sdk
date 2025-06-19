@@ -103,8 +103,8 @@ func New(config *GinConfig) *GinApp {
 		ginConfig: *config,
 	}
 
-	app.setupMiddleware()
 	app.setupRoutes()
+	app.setupMiddleware()
 	app.startupLog()
 
 	if app.ginConfig.EnableTracing {
