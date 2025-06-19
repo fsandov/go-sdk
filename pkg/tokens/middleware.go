@@ -38,6 +38,13 @@ func AuthMiddleware(tokenSvc Service) gin.HandlerFunc {
 			return
 		}
 
+		typ, _ := GetStringClaim(claims, "typ")
+		if typ != "access" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token type"})
+			c.Abort()
+			return
+		}
+
 		userID, _ := GetStringClaim(claims, "sub")
 		if userID == "" {
 			logs.Warn(c.Request.Context(), "[AuthMiddleware] missing 'sub' in claims")

@@ -71,10 +71,12 @@ func (s *jwtService) GenerateTokens(userID, email string, customClaims map[strin
 	now := time.Now().UTC()
 	accessClaims := baseClaims(s.cfg.Issuer, userID, email, customClaims)
 	accessClaims["exp"] = now.Add(s.cfg.AccessTokenExp).Unix()
+	accessClaims["typ"] = "access"
 
 	refreshExp := now.Add(s.cfg.RefreshTokenExp)
 	refreshClaims := baseClaims(s.cfg.Issuer, userID, "", nil)
 	refreshClaims["exp"] = refreshExp.Unix()
+	refreshClaims["typ"] = "refresh"
 
 	accessToken, err := s.signToken(accessClaims)
 	if err != nil {
