@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.0.3] - 05-07-2025
+- Enhance client IP retrieval in middleware to support CF-Connecting-IP header
+
 ## [1.0.2] - 19-06-2025
 - Add refresh token type validation in authentication middleware
 
