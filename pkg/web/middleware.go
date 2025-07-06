@@ -120,12 +120,14 @@ func GetIPFromContext(c *gin.Context) string {
 }
 
 func clientIP(c *gin.Context) string {
+	if cfIP := c.Request.Header.Get("CF-Connecting-IP"); cfIP != "" {
+		return cfIP
+	}
+
 	if fwdFor := c.Request.Header.Get("X-Forwarded-For"); fwdFor != "" {
-		ips := strings.FieldsFunc(fwdFor, func(r rune) bool {
-			return r == ',' || r == ' '
-		})
+		ips := strings.Split(fwdFor, ",")
 		if len(ips) > 0 {
-			return ips[len(ips)-1]
+			return strings.TrimSpace(ips[0])
 		}
 	}
 
