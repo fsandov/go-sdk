@@ -25,6 +25,11 @@ type Cache interface {
 
 	Increment(ctx context.Context, key string, value int64) (int64, error)
 	Decrement(ctx context.Context, key string, value int64) (int64, error)
+
 	MGet(ctx context.Context, keys ...string) ([]interface{}, error)
 	MSet(ctx context.Context, values map[string]interface{}, ttl time.Duration) error
+
+	ZAdd(ctx context.Context, key string, score float64, member string) error
+	ZRem(ctx context.Context, key string, member string) error
+	ZRange(ctx context.Context, key string, start, stop int64) ([]string, error)
 }

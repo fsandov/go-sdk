@@ -2,7 +2,9 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -13,17 +15,24 @@ type memoryEntry struct {
 	expiration time.Time
 }
 
+type sortedSetItem struct {
+	score  float64
+	member string
+}
+
 type memoryCache struct {
-	mu     sync.RWMutex
-	items  map[string]memoryEntry
-	stopGC chan struct{}
-	closed bool
+	mu         sync.RWMutex
+	items      map[string]memoryEntry
+	sortedSets map[string][]sortedSetItem
+	stopGC     chan struct{}
+	closed     bool
 }
 
 func NewMemoryCache() Cache {
 	c := &memoryCache{
-		items:  make(map[string]memoryEntry),
-		stopGC: make(chan struct{}),
+		items:      make(map[string]memoryEntry),
+		sortedSets: make(map[string][]sortedSetItem),
+		stopGC:     make(chan struct{}),
 	}
 	go c.startGC()
 	return c
@@ -239,6 +248,106 @@ func (c *memoryCache) MSet(_ context.Context, values map[string]interface{}, ttl
 	}
 
 	return nil
+}
+
+func (c *memoryCache) ZAdd(_ context.Context, key string, score float64, member string) error {
+	if key == "" {
+		return errors.New("key cannot be empty")
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if _, exists := c.sortedSets[key]; !exists {
+		c.sortedSets[key] = make([]sortedSetItem, 0)
+	}
+
+	for i, item := range c.sortedSets[key] {
+		if item.member == member {
+			c.sortedSets[key][i].score = score
+			sort.Slice(c.sortedSets[key], func(i, j int) bool {
+				return c.sortedSets[key][i].score < c.sortedSets[key][j].score
+			})
+			return nil
+		}
+	}
+
+	c.sortedSets[key] = append(c.sortedSets[key], sortedSetItem{
+		score:  score,
+		member: member,
+	})
+
+	sort.Slice(c.sortedSets[key], func(i, j int) bool {
+		return c.sortedSets[key][i].score < c.sortedSets[key][j].score
+	})
+
+	return nil
+}
+
+func (c *memoryCache) ZRem(_ context.Context, key, member string) error {
+	if key == "" {
+		return errors.New("key cannot be empty")
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	set, exists := c.sortedSets[key]
+	if !exists {
+		return nil
+	}
+
+	for i, item := range set {
+		if item.member == member {
+			c.sortedSets[key] = append(set[:i], set[i+1:]...)
+			break
+		}
+	}
+
+	if len(c.sortedSets[key]) == 0 {
+		delete(c.sortedSets, key)
+	}
+
+	return nil
+}
+
+func (c *memoryCache) ZRange(_ context.Context, key string, start, stop int64) ([]string, error) {
+	if key == "" {
+		return nil, errors.New("key cannot be empty")
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	set, exists := c.sortedSets[key]
+	if !exists {
+		return []string{}, nil
+	}
+
+	size := int64(len(set))
+	if start < 0 {
+		start = size + start
+	}
+	if stop < 0 {
+		stop = size + stop
+	}
+
+	if start < 0 {
+		start = 0
+	}
+	if stop >= size {
+		stop = size - 1
+	}
+	if start > stop || start >= size || stop < 0 {
+		return []string{}, nil
+	}
+
+	result := make([]string, 0, stop-start+1)
+	for i := start; i <= stop; i++ {
+		result = append(result, set[i].member)
+	}
+
+	return result, nil
 }
 
 func (c *memoryCache) startGC() {

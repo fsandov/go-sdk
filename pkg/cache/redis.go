@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -26,6 +27,7 @@ func (c *RedisConfig) applyDefaults() {
 		c.DialTimeout = 5 * time.Second
 	}
 }
+
 func (c *RedisConfig) Validate() error {
 	if !c.Enabled {
 		return nil
@@ -220,33 +222,51 @@ func (r *redisCache) MSet(ctx context.Context, values map[string]interface{}, tt
 		return nil
 	}
 
-	pairs := make([]interface{}, 0, len(values)*2)
-	for k, v := range values {
-		pairs = append(pairs, k, v)
-	}
-
 	pipe := r.client.Pipeline()
-	if pipe == nil {
-		return fmt.Errorf("failed to create Redis pipeline")
-	}
-
-	cmd := pipe.MSet(ctx, pairs...)
-	if err := cmd.Err(); err != nil {
-		return fmt.Errorf("failed to set multiple values: %w", err)
-	}
-
-	if ttl > 0 {
-		for k := range values {
-			cmd := pipe.Expire(ctx, k, ttl)
-			if err := cmd.Err(); err != nil {
-				return fmt.Errorf("failed to set TTL for key %s: %w", k, err)
-			}
+	for k, v := range values {
+		jsonData, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Errorf("failed to marshal value for key %s: %w", k, err)
 		}
+		pipe.Set(ctx, k, jsonData, ttl)
 	}
 
-	if _, err := pipe.Exec(ctx); err != nil {
-		return fmt.Errorf("failed to execute pipeline: %w", err)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func (r *redisCache) ZAdd(ctx context.Context, key string, score float64, member string) error {
+	if key == "" {
+		return errors.New("key cannot be empty")
 	}
 
-	return nil
+	z := redis.Z{
+		Score:  score,
+		Member: member,
+	}
+
+	_, err := r.client.ZAdd(ctx, key, z).Result()
+	return err
+}
+
+func (r *redisCache) ZRem(ctx context.Context, key, member string) error {
+	if key == "" {
+		return errors.New("key cannot be empty")
+	}
+
+	_, err := r.client.ZRem(ctx, key, member).Result()
+	return err
+}
+
+func (r *redisCache) ZRange(ctx context.Context, key string, start, stop int64) ([]string, error) {
+	if key == "" {
+		return nil, errors.New("key cannot be empty")
+	}
+
+	result, err := r.client.ZRange(ctx, key, start, stop).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get range from sorted set: %w", err)
+	}
+
+	return result, nil
 }
