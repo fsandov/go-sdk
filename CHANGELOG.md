@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.1.0] - 07-07-2025
+- Add sorted set operations to memory and Redis cache implementations
+
 ## [1.0.3] - 05-07-2025
 - Enhance client IP retrieval in middleware to support CF-Connecting-IP header
 
