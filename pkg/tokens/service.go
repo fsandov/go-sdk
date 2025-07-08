@@ -1,6 +1,7 @@
 package tokens
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -9,19 +10,44 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-type Config struct {
-	SecretKey       string
-	Issuer          string
-	AccessTokenExp  time.Duration
+// TokenConfig is the base configuration for token generation
+type TokenConfig struct {
+	SecretKey      string
+	Issuer         string
+	AccessTokenExp time.Duration
+}
+
+// ShortLivedTokenConfig contains configuration for short-lived access tokens with refresh tokens
+type ShortLivedTokenConfig struct {
+	TokenConfig
 	RefreshTokenExp time.Duration
 }
 
-func DefaultConfig() *Config {
-	return &Config{
-		SecretKey:       os.Getenv("TOKEN_SECRET_KEY"),
-		Issuer:          os.Getenv("TOKEN_ISSUER"),
-		AccessTokenExp:  15 * time.Minute,
+// LongLivedTokenConfig contains configuration for long-lived access tokens without refresh tokens
+type LongLivedTokenConfig struct {
+	TokenConfig
+}
+
+// DefaultShortLivedConfig returns the default configuration for short-lived tokens
+func DefaultShortLivedConfig() *ShortLivedTokenConfig {
+	return &ShortLivedTokenConfig{
+		TokenConfig: TokenConfig{
+			SecretKey:      os.Getenv("TOKEN_SECRET_KEY"),
+			Issuer:         os.Getenv("TOKEN_ISSUER"),
+			AccessTokenExp: 15 * time.Minute,
+		},
 		RefreshTokenExp: 30 * 24 * time.Hour,
+	}
+}
+
+// DefaultLongLivedConfig returns the default configuration for long-lived tokens
+func DefaultLongLivedConfig() *LongLivedTokenConfig {
+	return &LongLivedTokenConfig{
+		TokenConfig: TokenConfig{
+			SecretKey:      os.Getenv("TOKEN_SECRET_KEY"),
+			Issuer:         os.Getenv("TOKEN_ISSUER"),
+			AccessTokenExp: 30 * 24 * time.Hour,
+		},
 	}
 }
 
@@ -38,14 +64,45 @@ type Service interface {
 	ValidateTokenAndGetClaims(tokenString string) (jwt.MapClaims, error)
 	IsTokenValid(tokenString string) bool
 	GetClaim(claims jwt.MapClaims, key string) (interface{}, error)
+
+	AddTokenToCache(ctx context.Context, token, userID string, expiresAt time.Time) error
+	RemoveTokenFromCache(ctx context.Context, token string) error
+	InvalidateAllUserTokens(ctx context.Context, userID string) error
+	TokenExistsInCache(ctx context.Context, token string) (bool, error)
 }
 
 type jwtService struct {
-	cfg           *Config
+	tokenCfg      interface{} // Can be either ShortLivedTokenConfig or LongLivedTokenConfig
+	cacheMgr      CacheManager
 	signingMethod jwt.SigningMethod
 }
 
-func NewService(cfg *Config) (Service, error) {
+func (s *jwtService) getTokenConfig() TokenConfig {
+	switch cfg := s.tokenCfg.(type) {
+	case ShortLivedTokenConfig:
+		return cfg.TokenConfig
+	case LongLivedTokenConfig:
+		return cfg.TokenConfig
+	default:
+		panic("invalid token configuration type")
+	}
+}
+
+func (s *jwtService) isShortLived() bool {
+	_, ok := s.tokenCfg.(ShortLivedTokenConfig)
+	return ok
+}
+
+func (s *jwtService) getShortLivedConfig() ShortLivedTokenConfig {
+	cfg, ok := s.tokenCfg.(ShortLivedTokenConfig)
+	if !ok {
+		panic("attempted to use short-lived token methods with long-lived configuration")
+	}
+	return cfg
+}
+
+// NewService creates a new token service with short-lived tokens configuration
+func NewService(cfg *ShortLivedTokenConfig, opts ...ServiceOption) (Service, error) {
 	if cfg == nil {
 		return nil, errors.New("tokens: config is nil")
 	}
@@ -61,20 +118,70 @@ func NewService(cfg *Config) (Service, error) {
 	if cfg.RefreshTokenExp == 0 {
 		cfg.RefreshTokenExp = 24 * time.Hour
 	}
-	return &jwtService{
-		cfg:           cfg,
+
+	svc := &jwtService{
+		tokenCfg:      *cfg,
 		signingMethod: jwt.SigningMethodHS256,
-	}, nil
+	}
+
+	for _, opt := range opts {
+		opt(svc)
+	}
+
+	return svc, nil
+}
+
+type ServiceOption func(*jwtService)
+
+// WithCache enables token caching using the provided cache manager
+func WithCache(cacheMgr CacheManager) ServiceOption {
+	return func(s *jwtService) {
+		s.cacheMgr = cacheMgr
+	}
+}
+
+// NewLongLivedService creates a new token service with long-lived tokens configuration
+func NewLongLivedService(cfg *LongLivedTokenConfig, opts ...ServiceOption) (Service, error) {
+	if cfg == nil {
+		return nil, errors.New("tokens: config is nil")
+	}
+	if cfg.SecretKey == "" {
+		return nil, ErrNoSecret
+	}
+	if cfg.Issuer == "" {
+		return nil, ErrNoIssuer
+	}
+	if cfg.AccessTokenExp == 0 {
+		cfg.AccessTokenExp = 30 * 24 * time.Hour
+	}
+
+	svc := &jwtService{
+		tokenCfg:      *cfg,
+		signingMethod: jwt.SigningMethodHS256,
+	}
+
+	for _, opt := range opts {
+		opt(svc)
+	}
+
+	return svc, nil
 }
 
 func (s *jwtService) GenerateTokens(userID, email string, customClaims map[string]interface{}) (string, string, time.Time, error) {
+	if !s.isShortLived() {
+		return "", "", time.Time{}, errors.New("GenerateTokens can only be used with short-lived token configuration")
+	}
+
+	cfg := s.getShortLivedConfig()
+	tokenCfg := s.getTokenConfig()
 	now := time.Now().UTC()
-	accessClaims := baseClaims(s.cfg.Issuer, userID, email, customClaims)
-	accessClaims["exp"] = now.Add(s.cfg.AccessTokenExp).Unix()
+
+	accessClaims := baseClaims(tokenCfg.Issuer, userID, email, customClaims)
+	accessClaims["exp"] = now.Add(tokenCfg.AccessTokenExp).Unix()
 	accessClaims["typ"] = "access"
 
-	refreshExp := now.Add(s.cfg.RefreshTokenExp)
-	refreshClaims := baseClaims(s.cfg.Issuer, userID, "", nil)
+	refreshExp := now.Add(cfg.RefreshTokenExp)
+	refreshClaims := baseClaims(tokenCfg.Issuer, userID, "", nil)
 	refreshClaims["exp"] = refreshExp.Unix()
 	refreshClaims["typ"] = "refresh"
 
@@ -82,17 +189,21 @@ func (s *jwtService) GenerateTokens(userID, email string, customClaims map[strin
 	if err != nil {
 		return "", "", time.Time{}, fmt.Errorf("sign access token: %w", err)
 	}
+
 	refreshToken, err := s.signToken(refreshClaims)
 	if err != nil {
 		return "", "", time.Time{}, fmt.Errorf("sign refresh token: %w", err)
 	}
+
 	return accessToken, refreshToken, refreshExp, nil
 }
 
 func (s *jwtService) GenerateToken(userID, email string, customClaims map[string]interface{}) (string, error) {
+	tokenCfg := s.getTokenConfig()
 	now := time.Now().UTC()
-	claims := baseClaims(s.cfg.Issuer, userID, email, customClaims)
-	claims["exp"] = now.Add(s.cfg.AccessTokenExp).Unix()
+	claims := baseClaims(tokenCfg.Issuer, userID, email, customClaims)
+	claims["exp"] = now.Add(tokenCfg.AccessTokenExp).Unix()
+	claims["typ"] = "access"
 	return s.signToken(claims)
 }
 
@@ -115,15 +226,62 @@ func baseClaims(issuer, userID, email string, customClaims map[string]interface{
 
 func (s *jwtService) signToken(claims jwt.MapClaims) (string, error) {
 	token := jwt.NewWithClaims(s.signingMethod, claims)
-	return token.SignedString([]byte(s.cfg.SecretKey))
+	tokenCfg := s.getTokenConfig()
+	return token.SignedString([]byte(tokenCfg.SecretKey))
+}
+
+// AddTokenToCache adds a token to the cache and associates it with the user
+func (s *jwtService) AddTokenToCache(ctx context.Context, token, userID string, expiresAt time.Time) error {
+	if s.cacheMgr == nil {
+		return nil
+	}
+	if expiresAt.Before(time.Now()) {
+		return fmt.Errorf("token has already expired")
+	}
+	if userID == "" {
+		return errors.New("user ID is required")
+	}
+	if expiresAt.IsZero() {
+		return errors.New("expiration time is required")
+	}
+	return s.cacheMgr.AddToken(ctx, token, userID, expiresAt)
+}
+
+// RemoveTokenFromCache removes a specific token from the cache
+// This is typically called during logout or when a token needs to be revoked
+func (s *jwtService) RemoveTokenFromCache(ctx context.Context, token string) error {
+	if s.cacheMgr == nil {
+		return nil
+	}
+	return s.cacheMgr.RemoveToken(ctx, token)
+}
+
+func (s *jwtService) InvalidateAllUserTokens(ctx context.Context, userID string) error {
+	if s.cacheMgr == nil {
+		return errors.New("cache manager not configured")
+	}
+	if userID == "" {
+		return errors.New("user ID is required")
+	}
+	return s.cacheMgr.InvalidateAllUserTokens(ctx, userID)
+}
+
+// TokenExistsInCache checks if a token exists and is valid in the cache
+// Returns true only if the token exists and is not expired
+func (s *jwtService) TokenExistsInCache(ctx context.Context, token string) (bool, error) {
+	if s.cacheMgr == nil {
+		return false, nil
+	}
+	return s.cacheMgr.TokenExists(ctx, token)
 }
 
 func (s *jwtService) ValidateTokenAndGetClaims(tokenString string) (jwt.MapClaims, error) {
+	tokenCfg := s.getTokenConfig()
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if token.Method != s.signingMethod {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return []byte(s.cfg.SecretKey), nil
+		return []byte(tokenCfg.SecretKey), nil
 	})
 	if err != nil || !token.Valid {
 		return nil, ErrInvalidToken
