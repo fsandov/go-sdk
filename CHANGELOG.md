@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.2.0] - 07-07-2025
+- Implement token caching with cache manager and enhance middleware for cached token validation
+
 ## [1.1.0] - 07-07-2025
 - Add sorted set operations to memory and Redis cache implementations
 
