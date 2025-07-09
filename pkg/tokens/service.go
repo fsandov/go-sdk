@@ -60,7 +60,7 @@ var (
 
 type Service interface {
 	GenerateTokens(userID, email string, customClaims map[string]interface{}) (accessToken, refreshToken string, refreshTokenExpire time.Time, err error)
-	GenerateToken(userID, email string, customClaims map[string]interface{}) (string, error)
+	GenerateToken(userID, email string, customClaims map[string]interface{}) (string, time.Time, error)
 	ValidateTokenAndGetClaims(tokenString string) (jwt.MapClaims, error)
 	IsTokenValid(tokenString string) bool
 	GetClaim(claims jwt.MapClaims, key string) (interface{}, error)
@@ -198,13 +198,21 @@ func (s *jwtService) GenerateTokens(userID, email string, customClaims map[strin
 	return accessToken, refreshToken, refreshExp, nil
 }
 
-func (s *jwtService) GenerateToken(userID, email string, customClaims map[string]interface{}) (string, error) {
+func (s *jwtService) GenerateToken(userID, email string, customClaims map[string]interface{}) (string, time.Time, error) {
 	tokenCfg := s.getTokenConfig()
 	now := time.Now().UTC()
+
+	tokenExp := now.Add(tokenCfg.AccessTokenExp)
 	claims := baseClaims(tokenCfg.Issuer, userID, email, customClaims)
-	claims["exp"] = now.Add(tokenCfg.AccessTokenExp).Unix()
+	claims["exp"] = tokenExp.Unix()
 	claims["typ"] = "access"
-	return s.signToken(claims)
+
+	accessToken, err := s.signToken(claims)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("sign access token: %w", err)
+	}
+
+	return accessToken, tokenExp, nil
 }
 
 func baseClaims(issuer, userID, email string, customClaims map[string]interface{}) jwt.MapClaims {

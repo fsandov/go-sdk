@@ -121,7 +121,7 @@ func showCachedExample() {
 	fmt.Println("\n🔑 Generating multiple tokens for the same user...")
 	var tokensList []string
 	for i := 0; i < 3; i++ {
-		accessToken, _, expiresAt, err := tokenSvc.GenerateTokens(
+		accessToken, expiresAt, err := tokenSvc.GenerateToken(
 			userID,
 			fmt.Sprintf("%s-%d@example.com", strings.TrimSuffix(email, "@example.com"), i+1),
 			customClaims,
