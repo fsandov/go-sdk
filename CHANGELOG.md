@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.2.1] - 09-07-2025
+- Refactor token generation to return expiration time and update service interface
+
 ## [1.2.0] - 07-07-2025
 - Implement token caching with cache manager and enhance middleware for cached token validation
 
