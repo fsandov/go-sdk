@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.3.0] - 20-07-2025
+- Add context to request with authorization header in middleware
+
 ## [1.2.1] - 09-07-2025
 - Refactor token generation to return expiration time and update service interface
 
