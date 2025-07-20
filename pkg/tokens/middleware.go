@@ -1,6 +1,7 @@
 package tokens
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"strings"
@@ -128,5 +129,9 @@ func setUserContext(c *gin.Context, claims jwt.MapClaims, authHeader string) {
 	c.Set("Authorization", authHeader)
 	c.Set(KeyUserID, userID)
 	c.Set(KeyClaims, claims)
+
+	ctx := context.WithValue(c.Request.Context(), "Authorization", authHeader)
+	c.Request = c.Request.WithContext(ctx)
+
 	c.Next()
 }
