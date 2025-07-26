@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.4.0] - 26-07-2025
+- Refactor authentication middleware to improve token validation, error handling and email ctx
+
 ## [1.3.0] - 20-07-2025
 - Add context to request with authorization header in middleware
 
