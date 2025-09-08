@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"time"
 
@@ -179,10 +180,17 @@ func Open(cfg Config, opts *Options) (*gorm.DB, error) {
 func buildDSN(cfg Config) (string, error) {
 	switch Dialect(cfg.Dialect) {
 	case DialectMySQL:
+		q := url.Values{}
+		q.Set("charset", "utf8mb4")
+		q.Set("parseTime", "true")
+		q.Set("loc", "Local")
+		q.Set("multiStatements", "true")
+
 		return fmt.Sprintf(
-			"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-			cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName,
+			"%s:%s@tcp(%s:%s)/%s?%s",
+			cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName, q.Encode(),
 		), nil
+
 	case DialectPostgreSQL:
 		sslmode := cfg.SSLMode
 		if sslmode == "" {
@@ -192,11 +200,13 @@ func buildDSN(cfg Config) (string, error) {
 			"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 			cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, sslmode,
 		), nil
+
 	case DialectSQLite:
 		if cfg.DSN != "" {
 			return cfg.DSN, nil
 		}
 		return "file::memory:?cache=shared", nil
+
 	default:
 		return "", fmt.Errorf("database: unsupported dialect '%s'", cfg.Dialect)
 	}
