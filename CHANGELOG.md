@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.4.2] - 08-09-2025
+- Enhance MySQL DSN construction to support dynamic query parameters for improved configuration
+
 ## [1.4.1] - 07-09-2025
 - Enhance Redis client initialization to support URL parsing and improve configuration handling
 
