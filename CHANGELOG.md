@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.4.1] - 07-09-2025
+- Enhance Redis client initialization to support URL parsing and improve configuration handling
+
 ## [1.4.0] - 26-07-2025
 - Refactor authentication middleware to improve token validation, error handling and email ctx
 
