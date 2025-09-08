@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -71,19 +72,33 @@ func NewRedisCacheFromConfig(cfg RedisConfig, opts ...RedisOption) (Cache, error
 		return nil, errors.New("redis: Redis cache is not enabled")
 	}
 
-	options := &redis.Options{
-		Addr:        cfg.Addr,
-		Password:    cfg.Password,
-		DB:          cfg.DB,
-		PoolSize:    cfg.PoolSize,
-		DialTimeout: cfg.DialTimeout,
-	}
+	var client *redis.Client
 
-	for _, opt := range opts {
-		opt(options)
+	if strings.HasPrefix(cfg.Addr, "redis://") || strings.HasPrefix(cfg.Addr, "rediss://") {
+		o, err := redis.ParseURL(cfg.Addr)
+		if err != nil {
+			return nil, fmt.Errorf("redis: invalid URL in Addr: %w", err)
+		}
+		if cfg.PoolSize > 0 {
+			o.PoolSize = cfg.PoolSize
+		}
+		if cfg.DialTimeout > 0 {
+			o.DialTimeout = cfg.DialTimeout
+		}
+		client = redis.NewClient(o)
+	} else {
+		options := &redis.Options{
+			Addr:        cfg.Addr,
+			Password:    cfg.Password,
+			DB:          cfg.DB,
+			PoolSize:    cfg.PoolSize,
+			DialTimeout: cfg.DialTimeout,
+		}
+		for _, opt := range opts {
+			opt(options)
+		}
+		client = redis.NewClient(options)
 	}
-
-	client := redis.NewClient(options)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
