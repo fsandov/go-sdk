@@ -1,6 +1,7 @@
 package web
 
 import (
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -120,26 +121,75 @@ func GetIPFromContext(c *gin.Context) string {
 }
 
 func clientIP(c *gin.Context) string {
-	if cfIP := c.Request.Header.Get("CF-Connecting-IP"); cfIP != "" {
+	// Log all relevant headers for debugging
+	cfIP := c.Request.Header.Get("CF-Connecting-IP")
+	fwdFor := c.Request.Header.Get("X-Forwarded-For")
+	realIP := c.Request.Header.Get("X-Real-Ip")
+	xClientIP := c.Request.Header.Get("X-Client-IP")
+	xForwardedProto := c.Request.Header.Get("X-Forwarded-Proto")
+	xForwardedHost := c.Request.Header.Get("X-Forwarded-Host")
+	remoteAddr := c.Request.RemoteAddr
+
+	log.Printf("[IP DEBUG] Request from %s %s", c.Request.Method, c.Request.URL.Path)
+	log.Printf("[IP DEBUG] CF-Connecting-IP: '%s'", cfIP)
+	log.Printf("[IP DEBUG] X-Forwarded-For: '%s'", fwdFor)
+	log.Printf("[IP DEBUG] X-Real-Ip: '%s'", realIP)
+	log.Printf("[IP DEBUG] X-Client-IP: '%s'", xClientIP)
+	log.Printf("[IP DEBUG] X-Forwarded-Proto: '%s'", xForwardedProto)
+	log.Printf("[IP DEBUG] X-Forwarded-Host: '%s'", xForwardedHost)
+	log.Printf("[IP DEBUG] RemoteAddr: '%s'", remoteAddr)
+
+	// Log all headers that might contain IP information
+	for name, values := range c.Request.Header {
+		if strings.Contains(strings.ToLower(name), "ip") ||
+			strings.Contains(strings.ToLower(name), "forward") ||
+			strings.Contains(strings.ToLower(name), "client") ||
+			strings.Contains(strings.ToLower(name), "real") {
+			log.Printf("[IP DEBUG] Header %s: %v", name, values)
+		}
+	}
+
+	// Check CF-Connecting-IP first (Cloudflare)
+	if cfIP != "" {
+		log.Printf("[IP DEBUG] Using CF-Connecting-IP: %s", cfIP)
 		return cfIP
 	}
 
-	if fwdFor := c.Request.Header.Get("X-Forwarded-For"); fwdFor != "" {
+	// Check X-Client-IP (inter-service communication)
+	if xClientIP != "" {
+		log.Printf("[IP DEBUG] Using X-Client-IP: %s", xClientIP)
+		return xClientIP
+	}
+
+	// Check X-Forwarded-For (standard proxy header)
+	if fwdFor != "" {
 		ips := strings.Split(fwdFor, ",")
+		log.Printf("[IP DEBUG] X-Forwarded-For contains %d IPs: %v", len(ips), ips)
 		if len(ips) > 0 {
-			return strings.TrimSpace(ips[0])
+			clientIP := strings.TrimSpace(ips[0])
+			log.Printf("[IP DEBUG] Using first IP from X-Forwarded-For: %s", clientIP)
+			return clientIP
 		}
 	}
 
-	if realIP := c.Request.Header.Get("X-Real-Ip"); realIP != "" {
+	// Check X-Real-Ip
+	if realIP != "" {
+		log.Printf("[IP DEBUG] Using X-Real-Ip: %s", realIP)
 		return realIP
 	}
 
+	// Fallback to RemoteAddr
 	addr := c.Request.RemoteAddr
+	log.Printf("[IP DEBUG] Falling back to RemoteAddr: %s", addr)
 	if strings.Contains(addr, ":") {
-		if host, _, err := net.SplitHostPort(addr); err == nil {
+		if host, port, err := net.SplitHostPort(addr); err == nil {
+			log.Printf("[IP DEBUG] Extracted host '%s' from '%s' (port: %s)", host, addr, port)
 			return host
+		} else {
+			log.Printf("[IP DEBUG] Failed to split host:port from '%s': %v", addr, err)
 		}
 	}
+
+	log.Printf("[IP DEBUG] Final IP result: %s", addr)
 	return addr
 }
