@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.4.3] - 10-09-2025
+- Enhance client IP retrieval with detailed logging for better debugging
+
 ## [1.4.2] - 08-09-2025
 - Enhance MySQL DSN construction to support dynamic query parameters for improved configuration
 
