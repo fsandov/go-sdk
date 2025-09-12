@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -45,22 +44,9 @@ func RequestIDMiddleware() Middleware {
 func IPPropagationMiddleware() Middleware {
 	return func(next http.RoundTripper) http.RoundTripper {
 		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			log.Printf("[IP PROPAGATION] Outgoing request %s %s", req.Method, req.URL.String())
-
-			log.Printf("[IP PROPAGATION DEBUG] Existing headers before propagation:")
-			for name, values := range req.Header {
-				log.Printf("[IP PROPAGATION DEBUG] %s: %v", name, values)
-			}
-
 			headersToPropagate := []string{
 				"X-Original-Client-Ip",
 				"X-Client-IP",
-				//"CF-Connecting-IP",
-				//"CF-IPCountry",
-				//"X-Forwarded-For",
-				//"X-Real-IP",
-				//"X-Forwarded-Proto",
-				//"X-Forwarded-Host",
 			}
 
 			ctx := req.Context()
@@ -69,29 +55,11 @@ func IPPropagationMiddleware() Middleware {
 			for _, header := range headersToPropagate {
 				if value := getHeaderFromContext(ctx, header); value != "" {
 					req.Header.Set(header, value)
-					log.Printf("[IP PROPAGATION] Propagating %s: %s", header, value)
 					propagatedCount++
 				}
 			}
 
-			if propagatedCount == 0 {
-				log.Printf("[IP PROPAGATION] No IP headers found in context to propagate")
-			} else {
-				log.Printf("[IP PROPAGATION] Propagated %d IP headers", propagatedCount)
-			}
-
-			log.Printf("[IP PROPAGATION DEBUG] All headers after propagation:")
-			for name, values := range req.Header {
-				log.Printf("[IP PROPAGATION DEBUG] %s: %v", name, values)
-			}
-
 			resp, err := next.RoundTrip(req)
-
-			if err != nil {
-				log.Printf("[IP PROPAGATION DEBUG] Request failed with error: %v", err)
-			} else if resp != nil {
-				log.Printf("[IP PROPAGATION DEBUG] Response status: %d", resp.StatusCode)
-			}
 
 			return resp, err
 		})
@@ -102,13 +70,8 @@ func AppTokenMiddleware() Middleware {
 	appToken := os.Getenv("X_AUTH_APP_TOKEN")
 	return func(next http.RoundTripper) http.RoundTripper {
 		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			log.Printf("[AppTokenMiddleware] appToken: %s", appToken)
 			if appToken != "" {
 				req.Header.Set("X-Auth-App-Token", appToken)
-			}
-			log.Printf("[AppTokenMiddleware] Headers")
-			for name, values := range req.Header {
-				log.Printf("[AppTokenMiddleware] %s: %v", name, values)
 			}
 			return next.RoundTrip(req)
 		})
