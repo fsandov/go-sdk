@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.5.0] - 12-09-2025
+- Enhance IP propagation middleware with detailed logging and context enrichment
+
 ## [1.4.3] - 10-09-2025
 - Enhance client IP retrieval with detailed logging for better debugging
 
