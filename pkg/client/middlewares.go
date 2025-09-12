@@ -2,9 +2,11 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -43,16 +45,36 @@ func RequestIDMiddleware() Middleware {
 func IPPropagationMiddleware() Middleware {
 	return func(next http.RoundTripper) http.RoundTripper {
 		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			remoteAddr := req.RemoteAddr
-			if idx := strings.LastIndex(remoteAddr, ":"); idx != -1 {
-				remoteAddr = remoteAddr[:idx]
+			log.Printf("[IP PROPAGATION] Outgoing request %s %s", req.Method, req.URL.String())
+
+			headersToPropagate := []string{
+				"X-Original-Client-Ip",
+				"X-Client-IP",
+				"CF-Connecting-IP",
+				"CF-IPCountry",
+				"X-Forwarded-For",
+				"X-Real-IP",
+				"X-Forwarded-Proto",
+				"X-Forwarded-Host",
 			}
-			fwdFor := req.Header.Get("X-Forwarded-For")
-			if fwdFor != "" && !strings.Contains(fwdFor, remoteAddr) {
-				req.Header.Set("X-Forwarded-For", fwdFor+", "+remoteAddr)
-			} else if fwdFor == "" {
-				req.Header.Set("X-Forwarded-For", remoteAddr)
+
+			ctx := req.Context()
+			propagatedCount := 0
+
+			for _, header := range headersToPropagate {
+				if value := getHeaderFromContext(ctx, header); value != "" {
+					req.Header.Set(header, value)
+					log.Printf("[IP PROPAGATION] Propagating %s: %s", header, value)
+					propagatedCount++
+				}
 			}
+
+			if propagatedCount == 0 {
+				log.Printf("[IP PROPAGATION] No IP headers found in context to propagate")
+			} else {
+				log.Printf("[IP PROPAGATION] Propagated %d IP headers", propagatedCount)
+			}
+
 			return next.RoundTrip(req)
 		})
 	}
@@ -448,4 +470,17 @@ func MaxResponseSizeMiddleware(maxSize int64) Middleware {
 			return resp, err
 		})
 	}
+}
+
+type ContextKey string
+
+const (
+	IPHeadersContextKey ContextKey = "ip_headers"
+)
+
+func getHeaderFromContext(ctx context.Context, headerName string) string {
+	if headers, ok := ctx.Value(IPHeadersContextKey).(map[string]string); ok {
+		return headers[headerName]
+	}
+	return ""
 }

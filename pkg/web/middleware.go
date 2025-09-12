@@ -1,12 +1,14 @@
 package web
 
 import (
+	"context"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 
+	"github.com/fsandov/go-sdk/pkg/client"
 	"github.com/fsandov/go-sdk/pkg/paginate"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/gzip"
@@ -59,6 +61,7 @@ func (app *GinApp) setupMiddleware() {
 
 	app.engine.Use(SecureHeadersMiddleware())
 	app.engine.Use(RealIPMiddleware())
+	app.engine.Use(IPContextMiddleware())
 
 }
 
@@ -102,6 +105,18 @@ func RealIPMiddleware() gin.HandlerFunc {
 		ip := clientIP(c)
 		c.Set("client_ip", ip)
 		c.Writer.Header().Set("X-Client-IP", ip)
+
+		if originalIP := c.Request.Header.Get("X-Original-Client-Ip"); originalIP != "" {
+			c.Set("original_client_ip", originalIP)
+			c.Writer.Header().Set("X-Original-Client-Ip", originalIP)
+			log.Printf("[IP PROPAGATION] Preserving X-Original-Client-Ip: %s", originalIP)
+		} else {
+			c.Set("original_client_ip", ip)
+			c.Writer.Header().Set("X-Original-Client-Ip", ip)
+			log.Printf("[IP PROPAGATION] Setting X-Original-Client-Ip to detected IP: %s", ip)
+		}
+
+		log.Printf("[IP PROPAGATION] Middleware processed - client_ip: %s, original_client_ip: %s", ip, c.GetString("original_client_ip"))
 		c.Next()
 	}
 }
@@ -121,7 +136,7 @@ func GetIPFromContext(c *gin.Context) string {
 }
 
 func clientIP(c *gin.Context) string {
-	// Log all relevant headers for debugging
+	xOriginalClientIP := c.Request.Header.Get("X-Original-Client-Ip")
 	cfIP := c.Request.Header.Get("CF-Connecting-IP")
 	fwdFor := c.Request.Header.Get("X-Forwarded-For")
 	realIP := c.Request.Header.Get("X-Real-Ip")
@@ -130,66 +145,112 @@ func clientIP(c *gin.Context) string {
 	xForwardedHost := c.Request.Header.Get("X-Forwarded-Host")
 	remoteAddr := c.Request.RemoteAddr
 
-	log.Printf("[IP DEBUG] Request from %s %s", c.Request.Method, c.Request.URL.Path)
-	log.Printf("[IP DEBUG] CF-Connecting-IP: '%s'", cfIP)
-	log.Printf("[IP DEBUG] X-Forwarded-For: '%s'", fwdFor)
-	log.Printf("[IP DEBUG] X-Real-Ip: '%s'", realIP)
-	log.Printf("[IP DEBUG] X-Client-IP: '%s'", xClientIP)
-	log.Printf("[IP DEBUG] X-Forwarded-Proto: '%s'", xForwardedProto)
-	log.Printf("[IP DEBUG] X-Forwarded-Host: '%s'", xForwardedHost)
-	log.Printf("[IP DEBUG] RemoteAddr: '%s'", remoteAddr)
+	log.Printf("[IP PROPAGATION] Incoming request %s %s", c.Request.Method, c.Request.URL.Path)
+	log.Printf("[IP PROPAGATION] X-Original-Client-Ip: '%s'", xOriginalClientIP)
+	log.Printf("[IP PROPAGATION] CF-Connecting-IP: '%s'", cfIP)
+	log.Printf("[IP PROPAGATION] X-Forwarded-For: '%s'", fwdFor)
+	log.Printf("[IP PROPAGATION] X-Real-Ip: '%s'", realIP)
+	log.Printf("[IP PROPAGATION] X-Client-IP: '%s'", xClientIP)
+	log.Printf("[IP PROPAGATION] X-Forwarded-Proto: '%s'", xForwardedProto)
+	log.Printf("[IP PROPAGATION] X-Forwarded-Host: '%s'", xForwardedHost)
+	log.Printf("[IP PROPAGATION] RemoteAddr: '%s'", remoteAddr)
 
-	// Log all headers that might contain IP information
 	for name, values := range c.Request.Header {
 		if strings.Contains(strings.ToLower(name), "ip") ||
 			strings.Contains(strings.ToLower(name), "forward") ||
 			strings.Contains(strings.ToLower(name), "client") ||
-			strings.Contains(strings.ToLower(name), "real") {
-			log.Printf("[IP DEBUG] Header %s: %v", name, values)
+			strings.Contains(strings.ToLower(name), "real") ||
+			strings.Contains(strings.ToLower(name), "original") {
+			log.Printf("[IP PROPAGATION] Header %s: %v", name, values)
 		}
 	}
 
-	// Check CF-Connecting-IP first (Cloudflare)
-	if cfIP != "" {
-		log.Printf("[IP DEBUG] Using CF-Connecting-IP: %s", cfIP)
-		return cfIP
-	}
+	var selectedIP string
+	var source string
 
-	// Check X-Client-IP (inter-service communication)
-	if xClientIP != "" {
-		log.Printf("[IP DEBUG] Using X-Client-IP: %s", xClientIP)
-		return xClientIP
-	}
-
-	// Check X-Forwarded-For (standard proxy header)
-	if fwdFor != "" {
+	if xOriginalClientIP != "" {
+		selectedIP = xOriginalClientIP
+		source = "X-Original-Client-Ip"
+	} else if xClientIP != "" {
+		selectedIP = xClientIP
+		source = "X-Client-IP"
+	} else if cfIP != "" {
+		selectedIP = cfIP
+		source = "CF-Connecting-IP"
+	} else if fwdFor != "" {
 		ips := strings.Split(fwdFor, ",")
-		log.Printf("[IP DEBUG] X-Forwarded-For contains %d IPs: %v", len(ips), ips)
+		log.Printf("[IP PROPAGATION] X-Forwarded-For contains %d IPs: %v", len(ips), ips)
 		if len(ips) > 0 {
-			clientIP := strings.TrimSpace(ips[0])
-			log.Printf("[IP DEBUG] Using first IP from X-Forwarded-For: %s", clientIP)
-			return clientIP
+			selectedIP = strings.TrimSpace(ips[0])
+			source = "X-Forwarded-For[0]"
 		}
-	}
-
-	// Check X-Real-Ip
-	if realIP != "" {
-		log.Printf("[IP DEBUG] Using X-Real-Ip: %s", realIP)
-		return realIP
-	}
-
-	// Fallback to RemoteAddr
-	addr := c.Request.RemoteAddr
-	log.Printf("[IP DEBUG] Falling back to RemoteAddr: %s", addr)
-	if strings.Contains(addr, ":") {
-		if host, port, err := net.SplitHostPort(addr); err == nil {
-			log.Printf("[IP DEBUG] Extracted host '%s' from '%s' (port: %s)", host, addr, port)
-			return host
+	} else if realIP != "" {
+		selectedIP = realIP
+		source = "X-Real-Ip"
+	} else {
+		addr := c.Request.RemoteAddr
+		if strings.Contains(addr, ":") {
+			if host, port, err := net.SplitHostPort(addr); err == nil {
+				log.Printf("[IP PROPAGATION] Extracted host '%s' from '%s' (port: %s)", host, addr, port)
+				selectedIP = host
+				source = "RemoteAddr"
+			} else {
+				log.Printf("[IP PROPAGATION] Failed to split host:port from '%s': %v", addr, err)
+				selectedIP = addr
+				source = "RemoteAddr"
+			}
 		} else {
-			log.Printf("[IP DEBUG] Failed to split host:port from '%s': %v", addr, err)
+			selectedIP = addr
+			source = "RemoteAddr"
 		}
 	}
 
-	log.Printf("[IP DEBUG] Final IP result: %s", addr)
-	return addr
+	log.Printf("[IP PROPAGATION] Selected IP: %s (source: %s)", selectedIP, source)
+	return selectedIP
+}
+
+func GetIPHeadersFromContext(c *gin.Context) map[string]string {
+	headers := make(map[string]string)
+
+	headersToExtract := []string{
+		"X-Original-Client-Ip",
+		"X-Client-IP",
+		"CF-Connecting-IP",
+		"CF-IPCountry",
+		"X-Forwarded-For",
+		"X-Real-IP",
+		"X-Forwarded-Proto",
+		"X-Forwarded-Host",
+	}
+
+	for _, header := range headersToExtract {
+		if value := c.Request.Header.Get(header); value != "" {
+			headers[header] = value
+		}
+	}
+
+	if originalIP := c.GetString("original_client_ip"); originalIP != "" {
+		headers["X-Original-Client-Ip"] = originalIP
+	}
+
+	if clientIP := c.GetString("client_ip"); clientIP != "" && headers["X-Client-IP"] == "" {
+		headers["X-Client-IP"] = clientIP
+	}
+
+	log.Printf("[IP PROPAGATION] Extracted %d IP headers from Gin context", len(headers))
+	return headers
+}
+
+func IPContextMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		headers := GetIPHeadersFromContext(c)
+
+		enrichedCtx := context.WithValue(c.Request.Context(), client.IPHeadersContextKey, headers)
+		c.Request = c.Request.WithContext(enrichedCtx)
+
+		log.Printf("[IP PROPAGATION] Middleware enriched context with %d IP headers for %s %s",
+			len(headers), c.Request.Method, c.Request.URL.Path)
+
+		c.Next()
+	}
 }

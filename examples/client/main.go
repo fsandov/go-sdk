@@ -12,7 +12,6 @@ import (
 	"github.com/fsandov/go-sdk/pkg/cache"
 	"github.com/fsandov/go-sdk/pkg/client"
 	"github.com/fsandov/go-sdk/pkg/logs"
-
 	"github.com/sony/gobreaker"
 	"golang.org/x/time/rate"
 )
@@ -121,9 +120,14 @@ func main() {
 		}),
 	)
 
-	ctx := context.WithValue(context.Background(), "Authorization", "test-1234")
+	log.Println("=== IP PROPAGATION EXAMPLE ===")
 
-	resp, err := c.Get(ctx, "/posts/1", nil)
+	enrichedCtx := simulateEnrichedContext()
+	ctxWithAuth := context.WithValue(enrichedCtx, "Authorization", "test-1234")
+
+	log.Println("\n--- Making requests with automatic IP propagation ---")
+
+	resp, err := c.Get(ctxWithAuth, "/posts/1", nil)
 	if err != nil {
 		log.Printf("[TIMEOUT] error GET /posts/1: %v", err)
 	} else {
@@ -132,7 +136,7 @@ func main() {
 		fmt.Println("GET /posts/1 body:", string(body))
 	}
 
-	resp, err = c.Get(ctx, "/posts/2", nil)
+	resp, err = c.Get(ctxWithAuth, "/posts/2", nil)
 	if err != nil {
 		log.Fatalf("error GET /posts/2: %v", err)
 	}
@@ -140,7 +144,7 @@ func main() {
 	body, _ := io.ReadAll(resp.Body)
 	fmt.Println("GET /posts/2 body:", string(body)[:120], "...")
 
-	resp, err = c.Get(ctx, "/posts/2", nil)
+	resp, err = c.Get(ctxWithAuth, "/posts/2", nil)
 	if err != nil {
 		log.Fatalf("error GET /posts/2: %v", err)
 	}
@@ -150,11 +154,35 @@ func main() {
 
 	time.Sleep(6 * time.Second)
 
-	resp, err = c.Get(ctx, "/posts/2", nil)
+	resp, err = c.Get(ctxWithAuth, "/posts/2", nil)
 	if err != nil {
 		log.Fatalf("error GET /posts/2: %v", err)
 	}
 	defer resp.Body.Close()
 	body, _ = io.ReadAll(resp.Body)
 	fmt.Println("GET /posts/2 body:", string(body)[:120], "...")
+}
+
+func simulateEnrichedContext() context.Context {
+	log.Printf("[EXAMPLE] Simulating what IPContextMiddleware() does automatically")
+	log.Printf("[EXAMPLE] In real usage, this happens automatically - no manual code needed!")
+
+	headers := map[string]string{
+		"X-Original-Client-Ip": "222.111.11.11",
+		"X-Client-IP":          "11.22.333.444",
+		"CF-Connecting-IP":     "11.22.333.444",
+		"CF-IPCountry":         "CL",
+		"X-Forwarded-For":      "172.71.234.74",
+		"X-Real-IP":            "172.71.234.74",
+		"X-Forwarded-Proto":    "https",
+		"X-Forwarded-Host":     "host.com",
+	}
+
+	enrichedCtx := context.WithValue(context.Background(), client.IPHeadersContextKey, headers)
+
+	log.Printf("[EXAMPLE] Context enriched with %d IP headers", len(headers))
+	log.Printf("[EXAMPLE] Priority IP: %s (from X-Original-Client-Ip)", headers["X-Original-Client-Ip"])
+	log.Printf("[EXAMPLE] In a real Gin handler, you would just use: c.Request.Context()")
+
+	return enrichedCtx
 }
