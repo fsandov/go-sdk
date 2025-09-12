@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.5.1] - 12-09-2025
+- Enhance IP propagation middleware with additional debug logging for request and response headers
+
 ## [1.5.0] - 12-09-2025
 - Enhance IP propagation middleware with detailed logging and context enrichment
 
