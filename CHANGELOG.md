@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.5.3] - 12-09-2025
+- Refactor IP propagation middleware to remove excessive debug logging
+
 ## [1.5.2] - 12-09-2025
 - Refactor IP propagation middleware to comment out unused header fields
 
