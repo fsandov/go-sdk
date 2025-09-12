@@ -55,12 +55,12 @@ func IPPropagationMiddleware() Middleware {
 			headersToPropagate := []string{
 				"X-Original-Client-Ip",
 				"X-Client-IP",
-				"CF-Connecting-IP",
-				"CF-IPCountry",
-				"X-Forwarded-For",
-				"X-Real-IP",
-				"X-Forwarded-Proto",
-				"X-Forwarded-Host",
+				//"CF-Connecting-IP",
+				//"CF-IPCountry",
+				//"X-Forwarded-For",
+				//"X-Real-IP",
+				//"X-Forwarded-Proto",
+				//"X-Forwarded-Host",
 			}
 
 			ctx := req.Context()
