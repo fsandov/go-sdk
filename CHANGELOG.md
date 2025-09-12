@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.5.2] - 12-09-2025
+- Refactor IP propagation middleware to comment out unused header fields
+
 ## [1.5.1] - 12-09-2025
 - Enhance IP propagation middleware with additional debug logging for request and response headers
 
