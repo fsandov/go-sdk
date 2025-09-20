@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.5.4] - 20-09-2025
+- Refactor logging in application and logger modules to enhance clarity and reduce verbosity
+
 ## [1.5.3] - 12-09-2025
 - Refactor IP propagation middleware to remove excessive debug logging
 
