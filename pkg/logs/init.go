@@ -1,6 +1,7 @@
 package logs
 
 import (
+	"context"
 	"os"
 
 	"github.com/fsandov/go-sdk/pkg/notifiers"
@@ -9,11 +10,13 @@ import (
 )
 
 func AutoInitNotifiers() {
+	Info(context.Background(), "Auto init notifiers")
 	logger := GetLogger()
 	levels := []string{"error", "warn", "info"}
 
 	for _, lvl := range levels {
 		envKey := "DISCORD_WEBHOOK_" + upper(lvl)
+		Info(context.Background(), "Auto init notifiers", zap.String("level", lvl), zap.String("envKey", envKey))
 		if url := os.Getenv(envKey); url != "" {
 			client, err := discord.NewClient(discord.WithURL(url))
 			if err != nil {
