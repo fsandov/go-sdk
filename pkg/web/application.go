@@ -138,12 +138,18 @@ func (app *GinApp) Run() error {
 			serverErr <- err
 		}
 	}()
-
+	cfg := config.Get()
 	select {
 	case err := <-serverErr:
 		return err
 	case <-ctx.Done():
-		app.logger.Info(context.TODO(), "Shutting down server...")
+		app.logger.Warn(
+			context.TODO(),
+			"Shutting down server...",
+			zap.String("app", cfg.AppName),
+			zap.String("env", cfg.Environment),
+			logs.WithNotifier(),
+		)
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), app.ginConfig.ShutdownTimeout)
 		defer cancel()
@@ -175,7 +181,7 @@ func (app *GinApp) Use(middleware gin.HandlerFunc) {
 
 func (app *GinApp) startupLog() {
 	cfg := config.Get()
-	logs.Info(context.TODO(), "API started",
+	logs.Warn(context.TODO(), "API started",
 		zap.String("app", cfg.AppName),
 		zap.String("env", cfg.Environment),
 		zap.String("port", cfg.Port),
@@ -183,5 +189,6 @@ func (app *GinApp) startupLog() {
 		zap.String("os", cfg.OS),
 		zap.String("arch", cfg.Architecture),
 		zap.String("go_version", runtime.Version()),
+		logs.WithNotifier(),
 	)
 }

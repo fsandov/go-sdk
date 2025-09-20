@@ -136,7 +136,6 @@ func (l *Logger) sendNotifications(ctx context.Context, level, msg string, field
 		l.wg.Add(1)
 		go func(n notifiers.Notifier) {
 			defer l.wg.Done()
-			l.zap.Info("Enviando notificación a Discord", zap.String("level", level), zap.String("msg", msg))
 			if err := n.Notify(ctx, level, msg, fieldMap); err != nil {
 				l.zap.Error("failed to send notification", zap.String("level", level), zap.Error(err))
 			}
