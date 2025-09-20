@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.5.6] - 20-09-2025
+- Fix environment variable key formatting for Discord webhook initialization
+
 ## [1.5.5] - 20-09-2025
 - Add context logging for notifier initialization process
 
