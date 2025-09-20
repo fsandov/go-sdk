@@ -1,5 +1,8 @@
 # Changelog 
 
+## [1.5.5] - 20-09-2025
+- Add context logging for notifier initialization process
+
 ## [1.5.4] - 20-09-2025
 - Refactor logging in application and logger modules to enhance clarity and reduce verbosity
 
