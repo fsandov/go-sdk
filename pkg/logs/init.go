@@ -3,6 +3,7 @@ package logs
 import (
 	"context"
 	"os"
+	"strings"
 
 	"github.com/fsandov/go-sdk/pkg/notifiers"
 	"github.com/fsandov/go-sdk/pkg/notifiers/discord"
@@ -15,7 +16,7 @@ func AutoInitNotifiers() {
 	levels := []string{"error", "warn", "info"}
 
 	for _, lvl := range levels {
-		envKey := "DISCORD_WEBHOOK_" + upper(lvl)
+		envKey := "DISCORD_WEBHOOK_" + strings.ToUpper(lvl)
 		Info(context.Background(), "Auto init notifiers", zap.String("level", lvl), zap.String("envKey", envKey))
 		if url := os.Getenv(envKey); url != "" {
 			client, err := discord.NewClient(discord.WithURL(url))
@@ -29,13 +30,6 @@ func AutoInitNotifiers() {
 			logger.zap.Info("Discord notifier configured", zap.String("level", lvl), zap.String("url", url))
 		}
 	}
-}
-
-func upper(s string) string {
-	if len(s) == 0 {
-		return s
-	}
-	return string(s[0]-32) + s[1:]
 }
 
 func capitalize(s string) string {
