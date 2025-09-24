@@ -88,7 +88,8 @@ func (l *Logger) Debug(ctx context.Context, msg string, fieldsAndOpts ...any) {
 	l.logWithOpts(ctx, "debug", msg, fieldsAndOpts...)
 }
 
-func (l *Logger) logWithOpts(ctx context.Context, level, msg string, fieldsAndOpts ...any) {
+func (l *Logger) logWithOpts(ctxOld context.Context, level, msg string, fieldsAndOpts ...any) {
+	ctx := context.WithValue(ctxOld, "logger", l)
 	var zapFields []zap.Field
 	opts := &logOptions{}
 	for _, item := range fieldsAndOpts {
@@ -131,12 +132,25 @@ func (l *Logger) sendNotifications(ctx context.Context, level, msg string, field
 		l.zap.Warn("No notifiers configured for level", zap.String("level", level))
 		return
 	}
+
+	notificationCtx := context.Background()
+
+	if userID := ctx.Value("user_id"); userID != nil {
+		notificationCtx = context.WithValue(notificationCtx, "user_id", userID)
+	}
+	if requestID := ctx.Value("request_id"); requestID != nil {
+		notificationCtx = context.WithValue(notificationCtx, "request_id", requestID)
+	}
+	if traceID := ctx.Value("trace_id"); traceID != nil {
+		notificationCtx = context.WithValue(notificationCtx, "trace_id", traceID)
+	}
+
 	fieldMap := fieldsToMap(fields)
 	for _, notifier := range notifiersForLevel {
 		l.wg.Add(1)
 		go func(n notifiers.Notifier) {
 			defer l.wg.Done()
-			if err := n.Notify(ctx, level, msg, fieldMap); err != nil {
+			if err := n.Notify(notificationCtx, level, msg, fieldMap); err != nil {
 				l.zap.Error("failed to send notification", zap.String("level", level), zap.Error(err))
 			}
 		}(notifier)
