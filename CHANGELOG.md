@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.6.1] - 2026-02-09
+
+### Bug Fixes
+- Refactor telemetry resource creation to use schemaless attributes
+
 ## [1.6.0] - 2026-02-08
 
 ### Breaking Changes
