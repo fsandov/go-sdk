@@ -165,10 +165,14 @@ func (r *redisCache) TTL(ctx context.Context, key string) (time.Duration, error)
 	if err != nil {
 		return 0, err
 	}
-	if ttl < 0 {
+	switch {
+	case ttl == -2:
 		return 0, ErrKeyNotFound
+	case ttl == -1:
+		return 0, nil
+	default:
+		return ttl, nil
 	}
-	return ttl, nil
 }
 
 func (r *redisCache) Flush(ctx context.Context) error {

@@ -12,6 +12,15 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+type ctxKey int
+
+const (
+	ctxKeyLogger ctxKey = iota
+	CtxKeyUserID
+	CtxKeyRequestID
+	CtxKeyTraceID
+)
+
 var (
 	globalLogger *Logger
 	initOnce     sync.Once
@@ -89,10 +98,11 @@ func (l *Logger) Debug(ctx context.Context, msg string, fieldsAndOpts ...any) {
 }
 
 func (l *Logger) logWithOpts(ctxOld context.Context, level, msg string, fieldsAndOpts ...any) {
-	ctx := context.WithValue(ctxOld, "logger", l)
+	ctx := context.WithValue(ctxOld, ctxKeyLogger, l)
 	var zapFields []zap.Field
 	opts := &logOptions{}
-	for _, item := range fieldsAndOpts {
+	for i := 0; i < len(fieldsAndOpts); i++ {
+		item := fieldsAndOpts[i]
 		switch v := item.(type) {
 		case []zap.Field:
 			zapFields = append(zapFields, v...)
@@ -100,8 +110,15 @@ func (l *Logger) logWithOpts(ctxOld context.Context, level, msg string, fieldsAn
 			zapFields = append(zapFields, v)
 		case LogOption:
 			v.apply(opts)
+		case string:
+			if i+1 < len(fieldsAndOpts) {
+				zapFields = append(zapFields, zap.Any(v, fieldsAndOpts[i+1]))
+				i++
+			} else {
+				zapFields = append(zapFields, zap.String("orphanKey", v))
+			}
 		default:
-			l.zap.Debug("unsupported log field type", zap.Any("field", v))
+			zapFields = append(zapFields, zap.Any("unknown", v))
 		}
 	}
 
@@ -135,14 +152,14 @@ func (l *Logger) sendNotifications(ctx context.Context, level, msg string, field
 
 	notificationCtx := context.Background()
 
-	if userID := ctx.Value("user_id"); userID != nil {
-		notificationCtx = context.WithValue(notificationCtx, "user_id", userID)
+	if userID := ctx.Value(CtxKeyUserID); userID != nil {
+		notificationCtx = context.WithValue(notificationCtx, CtxKeyUserID, userID)
 	}
-	if requestID := ctx.Value("request_id"); requestID != nil {
-		notificationCtx = context.WithValue(notificationCtx, "request_id", requestID)
+	if requestID := ctx.Value(CtxKeyRequestID); requestID != nil {
+		notificationCtx = context.WithValue(notificationCtx, CtxKeyRequestID, requestID)
 	}
-	if traceID := ctx.Value("trace_id"); traceID != nil {
-		notificationCtx = context.WithValue(notificationCtx, "trace_id", traceID)
+	if traceID := ctx.Value(CtxKeyTraceID); traceID != nil {
+		notificationCtx = context.WithValue(notificationCtx, CtxKeyTraceID, traceID)
 	}
 
 	fieldMap := fieldsToMap(fields)

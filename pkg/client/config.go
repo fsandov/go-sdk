@@ -55,15 +55,15 @@ func applyDefaults(cfg *EndpointSettings) *EndpointSettings {
 
 func ValidateEndpointConfig(settings *EndpointSettings, path string) {
 	if settings == nil {
-		logs.Error(context.Background(), "Endpoint %s: configuración no definida", path)
+		logs.Error(context.Background(), "endpoint config not defined", "path", path)
 		return
 	}
 	if settings.Timeout == 0 {
-		logs.Info(context.Background(), "Endpoint %s: timeout no definido, usando default 10s", path)
+		logs.Info(context.Background(), "endpoint timeout not set, using default 10s", "path", path)
 		settings.Timeout = 10 * time.Second
 	}
 	if settings.Breaker == nil {
-		logs.Info(context.Background(), "Endpoint %s: breaker no definido, usando breaker default", path)
+		logs.Info(context.Background(), "endpoint breaker not set, using default", "path", path)
 		settings.Breaker = gobreaker.NewCircuitBreaker(gobreaker.Settings{
 			Name:        fmt.Sprintf("%s-breaker", path),
 			MaxRequests: 10,

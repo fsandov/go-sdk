@@ -27,7 +27,7 @@ func AutoInitNotifiers() {
 			username := "Logger" + capitalize(lvl) + "Manager"
 			notifier := notifiers.NewDiscordNotifier(client, username)
 			logger.AddNotifier(lvl, notifier)
-			logger.zap.Info("Discord notifier configured", zap.String("level", lvl), zap.String("url", url))
+			logger.zap.Info("Discord notifier configured", zap.String("level", lvl))
 		}
 	}
 }

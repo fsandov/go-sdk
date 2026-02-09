@@ -35,6 +35,46 @@ func WithMiddleware(mw Middleware) func(*options) {
 	return func(o *options) { o.middlewares = append(o.middlewares, mw) }
 }
 func WithHooks(hooks *HooksConfig) func(*options) { return func(o *options) { o.hooks = hooks } }
+func WithRateLimit(cfg *RateLimitConfig) func(*options) {
+	return func(o *options) {
+		if mw := RateLimitMiddleware(cfg); mw != nil {
+			o.middlewares = append(o.middlewares, mw)
+		}
+	}
+}
+func WithCircuitBreaker(cfg *CircuitBreakerConfig) func(*options) {
+	return func(o *options) {
+		if mw := CircuitBreakerMiddleware(cfg); mw != nil {
+			o.middlewares = append(o.middlewares, mw)
+		}
+	}
+}
+func WithCache(cfg *CacheConfig) func(*options) {
+	return func(o *options) {
+		if mw := CacheMiddleware(cfg); mw != nil {
+			o.middlewares = append(o.middlewares, mw)
+		}
+	}
+}
+func WithMaxResponseSize(maxSize int64) func(*options) {
+	return func(o *options) {
+		if maxSize > 0 {
+			o.middlewares = append(o.middlewares, MaxResponseSizeMiddleware(maxSize))
+		}
+	}
+}
+func WithMetrics(cfg *MetricsConfig) func(*options) {
+	return func(o *options) {
+		if mw := MetricsMiddleware(cfg); mw != nil {
+			o.middlewares = append(o.middlewares, mw)
+		}
+	}
+}
+func WithTracing(cfg *TracingConfig) func(*options) {
+	return func(o *options) {
+		o.middlewares = append(o.middlewares, TracingMiddleware(cfg))
+	}
+}
 
 func NewClient(opts ...func(*options)) *Client {
 	o := &options{
@@ -53,7 +93,7 @@ func NewClient(opts ...func(*options)) *Client {
 		transport = o.middlewares[i](transport)
 	}
 	return &Client{
-		httpClient: &http.Client{Transport: transport, Timeout: o.defaultSettings.Timeout},
+		httpClient: &http.Client{Transport: transport},
 		options:    o,
 	}
 }
@@ -114,6 +154,9 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, *Er
 		if !shouldRetry(resp, err) {
 			break
 		}
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
 		if retry < cfg.MaxRetries {
 			time.Sleep(backoffStrategy(retry))
 		}
@@ -137,8 +180,14 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, *Er
 			clientErr.Body = body
 		}
 		if cfg.Fallback != nil {
-			resp, err := cfg.Fallback(req, err)
-			return resp, err.(*Error)
+			fbResp, fbErr := cfg.Fallback(req, err)
+			if fbErr != nil {
+				if cErr, ok := fbErr.(*Error); ok {
+					return fbResp, cErr
+				}
+				return fbResp, &Error{Err: fbErr, Method: req.Method, URL: req.URL.String()}
+			}
+			return fbResp, nil
 		}
 		return resp, clientErr
 	}

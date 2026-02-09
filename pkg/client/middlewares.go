@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -131,8 +132,11 @@ func CircuitBreakerMiddleware(cfg *CircuitBreakerConfig) Middleware {
 					_, err := breaker.Execute(func() (interface{}, error) {
 						var err error
 						resp, err = next.RoundTrip(req)
-						if err != nil || (resp != nil && resp.StatusCode >= 500) {
+						if err != nil {
 							return nil, err
+						}
+						if resp != nil && resp.StatusCode >= 500 {
+							return nil, fmt.Errorf("server error: %d", resp.StatusCode)
 						}
 						return resp, nil
 					})
@@ -262,7 +266,9 @@ func MetricsMiddleware(config *MetricsConfig) Middleware {
 			[]string{"method", "host", "path", "error"},
 		)
 	)
-	prometheus.MustRegister(requestDuration, requestsTotal, requestErrors)
+	requestDuration = registerOrReuse(requestDuration).(*prometheus.HistogramVec)
+	requestsTotal = registerOrReuse(requestsTotal).(*prometheus.CounterVec)
+	requestErrors = registerOrReuse(requestErrors).(*prometheus.CounterVec)
 	return func(next http.RoundTripper) http.RoundTripper {
 		return &metricsTransport{
 			next:            next,
@@ -271,6 +277,18 @@ func MetricsMiddleware(config *MetricsConfig) Middleware {
 			requestErrors:   requestErrors,
 		}
 	}
+}
+
+func registerOrReuse(c prometheus.Collector) prometheus.Collector {
+	err := prometheus.Register(c)
+	if err == nil {
+		return c
+	}
+	var are prometheus.AlreadyRegisteredError
+	if errors.As(err, &are) {
+		return are.ExistingCollector
+	}
+	panic(err)
 }
 
 type metricsTransport struct {
@@ -449,10 +467,10 @@ func MaxResponseSizeMiddleware(maxSize int64) Middleware {
 	return func(next http.RoundTripper) http.RoundTripper {
 		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			resp, err := next.RoundTrip(req)
-			if err != nil || maxSize <= 0 {
+			if err != nil || maxSize <= 0 || resp == nil || resp.Body == nil {
 				return resp, err
 			}
-			resp.Body = http.MaxBytesReader(nil, resp.Body, maxSize)
+			resp.Body = io.NopCloser(io.LimitReader(resp.Body, maxSize))
 			return resp, err
 		})
 	}

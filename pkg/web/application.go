@@ -65,7 +65,7 @@ func DefaultGinConfig() *GinConfig {
 			EnableTracing:       true,
 			EnableGinPagination: true,
 			EnableXAuthAppToken: true,
-			OTELEndpoint:        "otel-collector:4317",
+			OTELEndpoint:        "otel-collector:4318",
 		}
 	}
 
@@ -85,7 +85,7 @@ func DefaultGinConfig() *GinConfig {
 		EnableTracing:       false,
 		EnableGinPagination: true,
 		EnableXAuthAppToken: true,
-		OTELEndpoint:        "otel-collector:4317",
+		OTELEndpoint:        "otel-collector:4318",
 	}
 }
 
@@ -109,7 +109,7 @@ func New(config *GinConfig) *GinApp {
 
 	if app.ginConfig.EnableTracing {
 		if err := app.setupTelemetry(); err != nil {
-			app.logger.Error(context.TODO(), "Failed to setup telemetry", zap.Error(err))
+			app.logger.Error(context.Background(), "Failed to setup telemetry", zap.Error(err))
 		}
 	}
 
@@ -133,7 +133,7 @@ func (app *GinApp) Run() error {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		app.logger.Info(context.TODO(), "Starting server", zap.String("address", addr))
+		app.logger.Info(context.Background(), "Starting server", zap.String("address", addr))
 		if err := app.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 		}
@@ -144,7 +144,7 @@ func (app *GinApp) Run() error {
 		return err
 	case <-ctx.Done():
 		app.logger.Warn(
-			context.TODO(),
+			context.Background(),
 			"Shutting down server...",
 			zap.String("app", cfg.AppName),
 			zap.String("env", cfg.Environment),
@@ -158,7 +158,7 @@ func (app *GinApp) Run() error {
 			return fmt.Errorf("server forced to shutdown: %w", err)
 		}
 
-		app.logger.Info(context.TODO(), "Server exited properly")
+		app.logger.Info(context.Background(), "Server exited properly")
 		return nil
 	}
 }
@@ -181,7 +181,7 @@ func (app *GinApp) Use(middleware gin.HandlerFunc) {
 
 func (app *GinApp) startupLog() {
 	cfg := config.Get()
-	logs.Warn(context.TODO(), "API started",
+	logs.Warn(context.Background(), "API started",
 		zap.String("app", cfg.AppName),
 		zap.String("env", cfg.Environment),
 		zap.String("port", cfg.Port),

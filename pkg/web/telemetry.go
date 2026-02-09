@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/fsandov/go-sdk/pkg/config"
 	"go.opentelemetry.io/otel"
@@ -16,7 +15,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
-	"go.uber.org/zap"
 )
 
 type TelemetryConfig struct {
@@ -58,14 +56,6 @@ func (app *GinApp) setupTelemetry() error {
 				propagation.Baggage{},
 			),
 		)
-
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := tp.Shutdown(ctx); err != nil {
-				app.logger.Error(context.Background(), "failed to shutdown tracer provider", zap.Error(err))
-			}
-		}()
 	}
 
 	if app.ginConfig.EnableMetrics {
@@ -76,14 +66,6 @@ func (app *GinApp) setupTelemetry() error {
 		app.meter = mp
 
 		otel.SetMeterProvider(mp)
-
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := mp.Shutdown(ctx); err != nil {
-				app.logger.Error(context.Background(), "failed to shutdown meter provider", zap.Error(err))
-			}
-		}()
 	}
 
 	return nil

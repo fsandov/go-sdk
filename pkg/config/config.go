@@ -54,6 +54,13 @@ func Init(cfg *AppConfig) {
 
 func Get() *AppConfig {
 	if instance == nil {
+		Init(&AppConfig{})
+	}
+	return instance
+}
+
+func MustGet() *AppConfig {
+	if instance == nil {
 		panic("AppConfig not initialized: call config.Init first")
 	}
 	return instance
