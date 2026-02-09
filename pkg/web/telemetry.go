@@ -14,7 +14,6 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
 type TelemetryConfig struct {
@@ -32,9 +31,8 @@ func (app *GinApp) setupTelemetry() error {
 
 	res, err := resource.Merge(
 		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceNameKey.String(cfg.AppName),
+		resource.NewSchemaless(
+			attribute.String("service.name", cfg.AppName),
 			attribute.String("environment", cfg.Environment),
 		),
 	)
