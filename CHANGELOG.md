@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.7.0] - 2026-03-05
+
+### Features
+- Fix issues and add cloudflare ips control
+
 ## [1.6.1] - 2026-02-09
 
 ### Bug Fixes
