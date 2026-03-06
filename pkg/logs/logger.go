@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/fsandov/go-sdk/pkg/env"
 	"github.com/fsandov/go-sdk/pkg/notifiers"
@@ -150,28 +151,31 @@ func (l *Logger) sendNotifications(ctx context.Context, level, msg string, field
 		return
 	}
 
-	notificationCtx := context.Background()
-
-	if userID := ctx.Value(CtxKeyUserID); userID != nil {
-		notificationCtx = context.WithValue(notificationCtx, CtxKeyUserID, userID)
-	}
-	if requestID := ctx.Value(CtxKeyRequestID); requestID != nil {
-		notificationCtx = context.WithValue(notificationCtx, CtxKeyRequestID, requestID)
-	}
-	if traceID := ctx.Value(CtxKeyTraceID); traceID != nil {
-		notificationCtx = context.WithValue(notificationCtx, CtxKeyTraceID, traceID)
+	notificationCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	for _, key := range []ctxKey{CtxKeyUserID, CtxKeyRequestID, CtxKeyTraceID} {
+		if val := ctx.Value(key); val != nil {
+			notificationCtx = context.WithValue(notificationCtx, key, val)
+		}
 	}
 
 	fieldMap := fieldsToMap(fields)
+	var batchWg sync.WaitGroup
 	for _, notifier := range notifiersForLevel {
 		l.wg.Add(1)
+		batchWg.Add(1)
 		go func(n notifiers.Notifier) {
 			defer l.wg.Done()
+			defer batchWg.Done()
 			if err := n.Notify(notificationCtx, level, msg, fieldMap); err != nil {
 				l.zap.Error("failed to send notification", zap.String("level", level), zap.Error(err))
 			}
 		}(notifier)
 	}
+
+	go func() {
+		batchWg.Wait()
+		cancel()
+	}()
 }
 
 func fieldsToMap(fields []zap.Field) map[string]any {

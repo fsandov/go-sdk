@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/fsandov/go-sdk/pkg/client"
+	"github.com/fsandov/go-sdk/pkg/env"
+	"github.com/fsandov/go-sdk/pkg/logs"
 	"github.com/fsandov/go-sdk/pkg/paginate"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/gzip"
@@ -35,7 +37,21 @@ func (app *GinApp) setupMiddleware() {
 	}
 
 	if app.ginConfig.EnableCORS {
-		app.engine.Use(cors.Default())
+		corsConfig := cors.DefaultConfig()
+		if len(app.ginConfig.CORSOrigins) > 0 {
+			corsConfig.AllowOrigins = app.ginConfig.CORSOrigins
+		} else if env.IsProduction() {
+			logs.Error(context.Background(), "CORS: no origins configured in production — allowing all origins is a security risk. Set CORSOrigins explicitly.", logs.WithNotifier())
+			corsConfig.AllowAllOrigins = true
+		} else if env.IsRemote() {
+			app.logger.Warn(context.Background(), "CORS: no origins configured, allowing all origins in remote environment")
+			corsConfig.AllowAllOrigins = true
+		} else {
+			corsConfig.AllowAllOrigins = true
+		}
+		corsConfig.AllowCredentials = !corsConfig.AllowAllOrigins
+		corsConfig.AllowHeaders = append(corsConfig.AllowHeaders, "Authorization", "X-Request-ID", "X-Auth-App-Token")
+		app.engine.Use(cors.New(corsConfig))
 	}
 
 	if app.ginConfig.EnableCompression {
@@ -107,16 +123,6 @@ func RealIPMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ip := clientIP(c)
 		c.Set("client_ip", ip)
-		c.Writer.Header().Set("X-Client-IP", ip)
-
-		if originalIP := c.Request.Header.Get("X-Original-Client-Ip"); originalIP != "" {
-			c.Set("original_client_ip", originalIP)
-			c.Writer.Header().Set("X-Original-Client-Ip", originalIP)
-		} else {
-			c.Set("original_client_ip", ip)
-			c.Writer.Header().Set("X-Original-Client-Ip", ip)
-		}
-
 		c.Next()
 	}
 }
@@ -136,53 +142,39 @@ func GetIPFromContext(c *gin.Context) string {
 }
 
 func clientIP(c *gin.Context) string {
-	xOriginalClientIP := c.Request.Header.Get("X-Original-Client-Ip")
-	cfIP := c.Request.Header.Get("CF-Connecting-IP")
-	fwdFor := c.Request.Header.Get("X-Forwarded-For")
-	realIP := c.Request.Header.Get("X-Real-Ip")
-	xClientIP := c.Request.Header.Get("X-Client-IP")
+	remoteAddr := c.Request.RemoteAddr
+	fromCF := IsFromCloudflare(remoteAddr)
 
-	var selectedIP string
-
-	if xOriginalClientIP != "" {
-		selectedIP = xOriginalClientIP
-	} else if xClientIP != "" {
-		selectedIP = xClientIP
-	} else if cfIP != "" {
-		selectedIP = cfIP
-	} else if fwdFor != "" {
-		ips := strings.Split(fwdFor, ",")
-		if len(ips) > 0 {
-			selectedIP = strings.TrimSpace(ips[0])
+	if fromCF {
+		if cfIP := c.Request.Header.Get("CF-Connecting-IP"); cfIP != "" {
+			return cfIP
 		}
-	} else if realIP != "" {
-		selectedIP = realIP
-	} else {
-		addr := c.Request.RemoteAddr
-		if strings.Contains(addr, ":") {
-			if host, _, err := net.SplitHostPort(addr); err == nil {
-				selectedIP = host
-			} else {
-				selectedIP = addr
-			}
-		} else {
-			selectedIP = addr
+		if trueClientIP := c.Request.Header.Get("True-Client-IP"); trueClientIP != "" {
+			return trueClientIP
 		}
 	}
 
-	return selectedIP
+	if fwdFor := c.Request.Header.Get("X-Forwarded-For"); fwdFor != "" {
+		ips := strings.Split(fwdFor, ",")
+		if len(ips) > 0 {
+			return strings.TrimSpace(ips[0])
+		}
+	}
+
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		return host
+	}
+	return remoteAddr
 }
 
 func GetIPHeadersFromContext(c *gin.Context) map[string]string {
 	headers := make(map[string]string)
 
 	headersToExtract := []string{
-		"X-Original-Client-Ip",
-		"X-Client-IP",
 		"CF-Connecting-IP",
 		"CF-IPCountry",
+		"True-Client-IP",
 		"X-Forwarded-For",
-		"X-Real-IP",
 		"X-Forwarded-Proto",
 		"X-Forwarded-Host",
 	}
@@ -193,11 +185,7 @@ func GetIPHeadersFromContext(c *gin.Context) map[string]string {
 		}
 	}
 
-	if originalIP := c.GetString("original_client_ip"); originalIP != "" {
-		headers["X-Original-Client-Ip"] = originalIP
-	}
-
-	if clientIP := c.GetString("client_ip"); clientIP != "" && headers["X-Client-IP"] == "" {
+	if clientIP := c.GetString("client_ip"); clientIP != "" {
 		headers["X-Client-IP"] = clientIP
 	}
 

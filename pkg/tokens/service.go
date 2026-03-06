@@ -71,34 +71,26 @@ type Service interface {
 	TokenExistsInCache(ctx context.Context, token string) (bool, error)
 }
 
+type tokenConfigProvider interface {
+	getBase() TokenConfig
+}
+
+func (c ShortLivedTokenConfig) getBase() TokenConfig { return c.TokenConfig }
+func (c LongLivedTokenConfig) getBase() TokenConfig  { return c.TokenConfig }
+
 type jwtService struct {
-	tokenCfg      interface{} // Can be either ShortLivedTokenConfig or LongLivedTokenConfig
+	tokenCfg      tokenConfigProvider
+	shortLivedCfg *ShortLivedTokenConfig
 	cacheMgr      CacheManager
 	signingMethod jwt.SigningMethod
 }
 
 func (s *jwtService) getTokenConfig() TokenConfig {
-	switch cfg := s.tokenCfg.(type) {
-	case ShortLivedTokenConfig:
-		return cfg.TokenConfig
-	case LongLivedTokenConfig:
-		return cfg.TokenConfig
-	default:
-		panic("invalid token configuration type")
-	}
+	return s.tokenCfg.getBase()
 }
 
 func (s *jwtService) isShortLived() bool {
-	_, ok := s.tokenCfg.(ShortLivedTokenConfig)
-	return ok
-}
-
-func (s *jwtService) getShortLivedConfig() ShortLivedTokenConfig {
-	cfg, ok := s.tokenCfg.(ShortLivedTokenConfig)
-	if !ok {
-		panic("attempted to use short-lived token methods with long-lived configuration")
-	}
-	return cfg
+	return s.shortLivedCfg != nil
 }
 
 // NewService creates a new token service with short-lived tokens configuration
@@ -119,8 +111,10 @@ func NewService(cfg *ShortLivedTokenConfig, opts ...ServiceOption) (Service, err
 		cfg.RefreshTokenExp = 24 * time.Hour
 	}
 
+	cfgCopy := *cfg
 	svc := &jwtService{
-		tokenCfg:      *cfg,
+		tokenCfg:      cfgCopy,
+		shortLivedCfg: &cfgCopy,
 		signingMethod: jwt.SigningMethodHS256,
 	}
 
@@ -172,7 +166,7 @@ func (s *jwtService) GenerateTokens(userID, email string, customClaims map[strin
 		return "", "", time.Time{}, errors.New("GenerateTokens can only be used with short-lived token configuration")
 	}
 
-	cfg := s.getShortLivedConfig()
+	cfg := s.shortLivedCfg
 	tokenCfg := s.getTokenConfig()
 	now := time.Now().UTC()
 

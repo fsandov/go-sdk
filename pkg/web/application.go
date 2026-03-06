@@ -45,6 +45,7 @@ type GinConfig struct {
 	EnableGinPagination bool
 	EnableXAuthAppToken bool
 	OTELEndpoint        string
+	CORSOrigins         []string
 }
 
 func DefaultGinConfig() *GinConfig {

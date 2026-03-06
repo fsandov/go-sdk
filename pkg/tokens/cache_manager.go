@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/fsandov/go-sdk/pkg/cache"
+	"github.com/fsandov/go-sdk/pkg/logs"
 )
 
 type CacheManager interface {
@@ -24,28 +24,6 @@ type cacheManager struct {
 
 type tokenData struct {
 	UserID string `json:"user_id"`
-}
-
-func (t *tokenData) UnmarshalJSON(data []byte) error {
-	type Alias tokenData
-	aux := &struct {
-		*Alias
-	}{
-		Alias: (*Alias)(t),
-	}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t tokenData) MarshalJSON() ([]byte, error) {
-	type Alias tokenData
-	return json.Marshal(&struct {
-		Alias
-	}{
-		Alias: (Alias)(t),
-	})
 }
 
 func NewCacheManager(cache cache.Cache) CacheManager {
@@ -113,7 +91,7 @@ func (cm *cacheManager) RemoveToken(ctx context.Context, token string) error {
 
 	userTokensKey := fmt.Sprintf("user_tokens:%s", data.UserID)
 	if err := cm.cache.ZRem(ctx, userTokensKey, token); err != nil {
-		log.Printf("warning: failed to remove token from user set: %v", err)
+		logs.Warn(ctx, "failed to remove token from user set", "error", err)
 	}
 
 	if err := cm.cache.Delete(ctx, tokenKey); err != nil && !errors.Is(err, cache.ErrKeyNotFound) {

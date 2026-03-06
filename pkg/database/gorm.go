@@ -91,6 +91,7 @@ type Options struct {
 	AutoMigrate    bool
 	HealthCheck    bool
 	HealthInterval time.Duration
+	HealthCtx      context.Context
 	OnFailure      func(error)
 }
 
@@ -165,7 +166,11 @@ func Open(cfg Config, opts *Options) (*gorm.DB, error) {
 	}
 
 	if opts.HealthCheck {
-		go healthChecker(db, opts.HealthInterval, opts.Logger, opts.OnFailure)
+		healthCtx := context.Background()
+		if opts.HealthCtx != nil {
+			healthCtx = opts.HealthCtx
+		}
+		go healthChecker(healthCtx, db, opts.HealthInterval, opts.Logger, opts.OnFailure)
 	}
 
 	opts.Logger.Info(context.Background(), "database connection established",
@@ -212,15 +217,19 @@ func buildDSN(cfg Config) (string, error) {
 	}
 }
 
-func healthChecker(db *gorm.DB, interval time.Duration, logger *logs.Logger, notify func(error)) {
+func healthChecker(ctx context.Context, db *gorm.DB, interval time.Duration, logger *logs.Logger, notify func(error)) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		<-ticker.C
-		if err := db.Exec("SELECT 1").Error; err != nil {
-			logger.Error(context.Background(), "database health check failed", zap.Error(err))
-			if notify != nil {
-				notify(err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := db.Exec("SELECT 1").Error; err != nil {
+				logger.Error(ctx, "database health check failed", zap.Error(err))
+				if notify != nil {
+					notify(err)
+				}
 			}
 		}
 	}

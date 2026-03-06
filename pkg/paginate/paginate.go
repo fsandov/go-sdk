@@ -5,11 +5,57 @@ import (
 	"errors"
 	"math"
 	"net/http"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+var validColumnRe = regexp.MustCompile(`^[a-zA-Z0-9_.]+$`)
+
+func SanitizeOrderBy(orderBy string) string {
+	orderBy = strings.TrimSpace(orderBy)
+	if orderBy == "" {
+		return ""
+	}
+
+	parts := strings.Split(orderBy, ",")
+	sanitized := make([]string, 0, len(parts))
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		tokens := strings.Fields(part)
+		if len(tokens) == 0 || len(tokens) > 2 {
+			return ""
+		}
+
+		column := tokens[0]
+		if !validColumnRe.MatchString(column) {
+			return ""
+		}
+
+		if len(tokens) == 2 {
+			dir := strings.ToUpper(tokens[1])
+			if dir != "ASC" && dir != "DESC" {
+				return ""
+			}
+			sanitized = append(sanitized, column+" "+dir)
+		} else {
+			sanitized = append(sanitized, column)
+		}
+	}
+
+	if len(sanitized) == 0 {
+		return ""
+	}
+	return strings.Join(sanitized, ", ")
+}
 
 const (
 	DefaultLimit = 10
@@ -153,8 +199,8 @@ func ApplyGormPaginationFromContext(ctx context.Context, db *gorm.DB) *gorm.DB {
 		page = DefaultPage
 	}
 	db = db.Offset(GetOffset(page, limit)).Limit(limit)
-	if orderBy != "" {
-		db = db.Order(orderBy)
+	if sanitized := SanitizeOrderBy(orderBy); sanitized != "" {
+		db = db.Order(sanitized)
 	}
 	return db
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/fsandov/go-sdk/pkg/cache"
 	"github.com/fsandov/go-sdk/pkg/logs"
+	"github.com/fsandov/go-sdk/pkg/tokens"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sony/gobreaker"
@@ -46,23 +47,20 @@ func IPPropagationMiddleware() Middleware {
 	return func(next http.RoundTripper) http.RoundTripper {
 		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			headersToPropagate := []string{
-				"X-Original-Client-Ip",
+				"CF-Connecting-IP",
+				"X-Forwarded-For",
 				"X-Client-IP",
 			}
 
 			ctx := req.Context()
-			propagatedCount := 0
 
 			for _, header := range headersToPropagate {
 				if value := getHeaderFromContext(ctx, header); value != "" {
 					req.Header.Set(header, value)
-					propagatedCount++
 				}
 			}
 
-			resp, err := next.RoundTrip(req)
-
-			return resp, err
+			return next.RoundTrip(req)
 		})
 	}
 }
@@ -79,7 +77,7 @@ func AppTokenMiddleware() Middleware {
 	}
 }
 
-const CtxKeyIncomingAuth = "Authorization"
+var CtxKeyIncomingAuth = tokens.AuthContextKey
 
 func AuthMiddleware() Middleware {
 	return func(next http.RoundTripper) http.RoundTripper {
@@ -87,7 +85,7 @@ func AuthMiddleware() Middleware {
 			cfgAny := req.Context().Value(EndpointConfigKey{})
 			cfg, _ := cfgAny.(*EndpointSettings)
 			if cfg != nil && cfg.RequireAuth {
-				if v := req.Context().Value(CtxKeyIncomingAuth); v != nil {
+				if v := req.Context().Value(tokens.AuthContextKey); v != nil {
 					if token, ok := v.(string); ok && token != "" {
 						req.Header.Set("Authorization", token)
 					}
@@ -288,7 +286,8 @@ func registerOrReuse(c prometheus.Collector) prometheus.Collector {
 	if errors.As(err, &are) {
 		return are.ExistingCollector
 	}
-	panic(err)
+	logs.Error(context.Background(), "failed to register prometheus collector, metrics may be unavailable", "error", err)
+	return c
 }
 
 type metricsTransport struct {

@@ -10,6 +10,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+type authContextKey struct{}
+
+var AuthContextKey = authContextKey{}
+
 const (
 	KeyUserID = "user_id"
 	KeyClaims = "claims"
@@ -146,7 +150,7 @@ func setUserContext(c *gin.Context, claims jwt.MapClaims, authHeader string) {
 		c.Set(KeyEmail, email)
 	}
 
-	ctx := context.WithValue(c.Request.Context(), "Authorization", authHeader)
+	ctx := context.WithValue(c.Request.Context(), AuthContextKey, authHeader)
 	c.Request = c.Request.WithContext(ctx)
 
 	c.Next()

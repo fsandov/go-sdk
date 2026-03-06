@@ -135,7 +135,7 @@ func TestRedisIntegration_MSetMGet(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	pairs := map[string]string{
+	pairs := map[string]interface{}{
 		"mk1": "mv1",
 		"mk2": "mv2",
 		"mk3": "mv3",
@@ -149,11 +149,25 @@ func TestRedisIntegration_MSetMGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MGet failed: %v", err)
 	}
-	if results["mk1"] != "mv1" || results["mk2"] != "mv2" || results["mk3"] != "mv3" {
-		t.Errorf("MGet returned unexpected values: %v", results)
-	}
-	if _, found := results["mk4-nonexistent"]; found {
-		t.Error("expected mk4-nonexistent to be absent from results")
+
+	keys := []string{"mk1", "mk2", "mk3", "mk4-nonexistent"}
+	expected := []interface{}{"mv1", "mv2", "mv3", nil}
+	for i, key := range keys {
+		if i >= len(results) {
+			t.Errorf("missing result for key %s", key)
+			continue
+		}
+		if expected[i] == nil {
+			if results[i] != nil {
+				t.Errorf("expected nil for %s, got %v", key, results[i])
+			}
+		} else {
+			got, _ := results[i].(string)
+			exp, _ := expected[i].(string)
+			if got != exp {
+				t.Errorf("expected %s for key %s, got %s", exp, key, got)
+			}
+		}
 	}
 }
 
@@ -162,7 +176,7 @@ func TestRedisIntegration_IncrementDecrement(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	val, err := c.Increment(ctx, "counter")
+	val, err := c.Increment(ctx, "counter", 1)
 	if err != nil {
 		t.Fatalf("Increment failed: %v", err)
 	}
@@ -170,7 +184,7 @@ func TestRedisIntegration_IncrementDecrement(t *testing.T) {
 		t.Errorf("expected 1, got %d", val)
 	}
 
-	val, err = c.Increment(ctx, "counter")
+	val, err = c.Increment(ctx, "counter", 1)
 	if err != nil {
 		t.Fatalf("Increment failed: %v", err)
 	}
@@ -178,7 +192,7 @@ func TestRedisIntegration_IncrementDecrement(t *testing.T) {
 		t.Errorf("expected 2, got %d", val)
 	}
 
-	val, err = c.Decrement(ctx, "counter")
+	val, err = c.Decrement(ctx, "counter", 1)
 	if err != nil {
 		t.Fatalf("Decrement failed: %v", err)
 	}
