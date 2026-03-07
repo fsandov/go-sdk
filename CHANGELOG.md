@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.7.1] - 2026-03-07
+- Refactor Client methods to return error instead of custom Error type
+
+### Bug Fixes
+- Fix issues and add cloudflare ips control
+
 ## [1.7.0] - 2026-03-05
 
 ### Features
