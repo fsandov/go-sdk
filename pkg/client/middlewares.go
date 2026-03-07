@@ -46,18 +46,19 @@ func RequestIDMiddleware() Middleware {
 func IPPropagationMiddleware() Middleware {
 	return func(next http.RoundTripper) http.RoundTripper {
 		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			headersToPropagate := []string{
-				"CF-Connecting-IP",
-				"X-Forwarded-For",
-				"X-Client-IP",
-			}
-
 			ctx := req.Context()
 
-			for _, header := range headersToPropagate {
-				if value := getHeaderFromContext(ctx, header); value != "" {
-					req.Header.Set(header, value)
-				}
+			// X-Client-IP: resolved real client IP, safe for inter-service propagation.
+			if v := getHeaderFromContext(ctx, "X-Client-IP"); v != "" {
+				req.Header.Set("X-Client-IP", v)
+			}
+
+			// X-Forwarded-For: preserve the original IP chain.
+			// NOTE: CF-Connecting-IP is intentionally NOT forwarded.
+			// It is a Cloudflare-internal header; sending it on outbound requests
+			// to CF-protected backends triggers WAF rules (403, error code 1000).
+			if v := getHeaderFromContext(ctx, "X-Forwarded-For"); v != "" {
+				req.Header.Set("X-Forwarded-For", v)
 			}
 
 			return next.RoundTrip(req)
