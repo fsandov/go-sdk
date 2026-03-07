@@ -100,7 +100,7 @@ func NewClient(opts ...func(*options)) *Client {
 
 type EndpointConfigKey struct{}
 
-func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, *Error) {
+func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, error) {
 	var cfg *EndpointSettings
 	if c.options.endpointConfig != nil {
 		cfg = c.options.endpointConfig(req.Method, req.URL.Path)
@@ -129,6 +129,11 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, *Er
 		if token, err := cfg.AuthTokenFn(&RequestInfo{Method: req.Method, Path: req.URL.Path}); err == nil && token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
+	}
+
+	reqInfo := &RequestInfo{Method: req.Method, Path: req.URL.Path}
+	if c.options.hooks.PreRequest != nil {
+		c.options.hooks.PreRequest(ctx, reqInfo)
 	}
 
 	var (
@@ -183,53 +188,66 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, *Er
 			fbResp, fbErr := cfg.Fallback(req, err)
 			if fbErr != nil {
 				if cErr, ok := fbErr.(*Error); ok {
+					if c.options.hooks.OnError != nil {
+						c.options.hooks.OnError(ctx, reqInfo, cErr)
+					}
 					return fbResp, cErr
 				}
-				return fbResp, &Error{Err: fbErr, Method: req.Method, URL: req.URL.String()}
+				fbClientErr := &Error{Err: fbErr, Method: req.Method, URL: req.URL.String()}
+				if c.options.hooks.OnError != nil {
+					c.options.hooks.OnError(ctx, reqInfo, fbClientErr)
+				}
+				return fbResp, fbClientErr
 			}
 			return fbResp, nil
 		}
+		if c.options.hooks.OnError != nil {
+			c.options.hooks.OnError(ctx, reqInfo, clientErr)
+		}
 		return resp, clientErr
+	}
+	if c.options.hooks.PostRequest != nil {
+		c.options.hooks.PostRequest(ctx, reqInfo, resp.StatusCode)
 	}
 	return resp, nil
 }
 
-func (c *Client) Get(ctx context.Context, path string, headers map[string]string) (*http.Response, *Error) {
+func (c *Client) Get(ctx context.Context, path string, headers map[string]string) (*http.Response, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, c.options.baseURL+path, nil)
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 	return c.Do(ctx, req)
 }
-func (c *Client) Post(ctx context.Context, path string, body []byte, headers map[string]string) (*http.Response, *Error) {
+func (c *Client) Post(ctx context.Context, path string, body []byte, headers map[string]string) (*http.Response, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, c.options.baseURL+path, bytes.NewReader(body))
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 	return c.Do(ctx, req)
 }
-func (c *Client) Put(ctx context.Context, path string, body []byte, headers map[string]string) (*http.Response, *Error) {
+func (c *Client) Put(ctx context.Context, path string, body []byte, headers map[string]string) (*http.Response, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPut, c.options.baseURL+path, bytes.NewReader(body))
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 	return c.Do(ctx, req)
 }
-func (c *Client) Patch(ctx context.Context, path string, body []byte, headers map[string]string) (*http.Response, *Error) {
+func (c *Client) Patch(ctx context.Context, path string, body []byte, headers map[string]string) (*http.Response, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPatch, c.options.baseURL+path, bytes.NewReader(body))
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 	return c.Do(ctx, req)
 }
-func (c *Client) Delete(ctx context.Context, path string, headers map[string]string) (*http.Response, *Error) {
+func (c *Client) Delete(ctx context.Context, path string, headers map[string]string) (*http.Response, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodDelete, c.options.baseURL+path, nil)
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 	return c.Do(ctx, req)
 }
-func (c *Client) Head(ctx context.Context, path string, headers map[string]string) (*http.Response, *Error) {
+func (c *Client) Head(ctx context.Context, path string, headers map[string]string) (*http.Response, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodHead, c.options.baseURL+path, nil)
 	for k, v := range headers {
 		req.Header.Set(k, v)
