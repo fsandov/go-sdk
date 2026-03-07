@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.7.2] - 2026-03-07
+- Refactor IPPropagationMiddleware to streamline header propagation and clarify comments
+
 ## [1.7.1] - 2026-03-07
 - Refactor Client methods to return error instead of custom Error type
 
