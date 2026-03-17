@@ -83,8 +83,8 @@ func (app *GinApp) setupMiddleware() {
 func XAuthAppTokenMiddleware() gin.HandlerFunc {
 	appToken := os.Getenv("X_AUTH_APP_TOKEN")
 	return func(c *gin.Context) {
-		if subtle.ConstantTimeCompare([]byte(c.GetHeader("X-Auth-App-Token")), []byte(appToken)) != 1 {
-			c.AbortWithStatusJSON(401, gin.H{"error": "Unauthorized"})
+		if appToken == "" || subtle.ConstantTimeCompare([]byte(c.GetHeader("X-Auth-App-Token")), []byte(appToken)) != 1 {
+			c.AbortWithStatusJSON(401, gin.H{"error": "unauthorized"})
 			return
 		}
 		c.Next()

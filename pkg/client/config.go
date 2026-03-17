@@ -2,9 +2,7 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/fsandov/go-sdk/pkg/logs"
@@ -27,7 +25,6 @@ type EndpointSettings struct {
 	CacheTTL        time.Duration
 	Fallback        func(*http.Request, error) (*http.Response, error)
 	MaxResponseSize int64
-	CustomTags      map[string]string
 }
 
 func applyDefaults(cfg *EndpointSettings) *EndpointSettings {
@@ -39,14 +36,6 @@ func applyDefaults(cfg *EndpointSettings) *EndpointSettings {
 	}
 	if cfg.MaxRetries == 0 {
 		cfg.MaxRetries = 2
-	}
-	if cfg.Breaker == nil {
-		cfg.Breaker = gobreaker.NewCircuitBreaker(gobreaker.Settings{
-			Name:        fmt.Sprintf("%s-breaker", os.Getenv("APP_NAME")),
-			MaxRequests: 10,
-			Interval:    30 * time.Second,
-			Timeout:     10 * time.Second,
-		})
 	}
 	if cfg.Headers == nil {
 		cfg.Headers = map[string]string{}
@@ -62,15 +51,6 @@ func ValidateEndpointConfig(settings *EndpointSettings, path string) {
 	if settings.Timeout == 0 {
 		logs.Info(context.Background(), "endpoint timeout not set, using default 10s", "path", path)
 		settings.Timeout = 10 * time.Second
-	}
-	if settings.Breaker == nil {
-		logs.Info(context.Background(), "endpoint breaker not set, using default", "path", path)
-		settings.Breaker = gobreaker.NewCircuitBreaker(gobreaker.Settings{
-			Name:        fmt.Sprintf("%s-breaker", path),
-			MaxRequests: 10,
-			Interval:    30 * time.Second,
-			Timeout:     10 * time.Second,
-		})
 	}
 }
 

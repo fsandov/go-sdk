@@ -59,11 +59,11 @@ var (
 )
 
 type Service interface {
-	GenerateTokens(userID, email string, customClaims map[string]interface{}) (accessToken, refreshToken string, refreshTokenExpire time.Time, err error)
-	GenerateToken(userID, email string, customClaims map[string]interface{}) (string, time.Time, error)
+	GenerateTokens(userID, email string, customClaims map[string]any) (accessToken, refreshToken string, refreshTokenExpire time.Time, err error)
+	GenerateToken(userID, email string, customClaims map[string]any) (string, time.Time, error)
 	ValidateTokenAndGetClaims(tokenString string) (jwt.MapClaims, error)
 	IsTokenValid(tokenString string) bool
-	GetClaim(claims jwt.MapClaims, key string) (interface{}, error)
+	GetClaim(claims jwt.MapClaims, key string) (any, error)
 
 	AddTokenToCache(ctx context.Context, token, userID string, expiresAt time.Time) error
 	RemoveTokenFromCache(ctx context.Context, token string) error
@@ -161,7 +161,7 @@ func NewLongLivedService(cfg *LongLivedTokenConfig, opts ...ServiceOption) (Serv
 	return svc, nil
 }
 
-func (s *jwtService) GenerateTokens(userID, email string, customClaims map[string]interface{}) (string, string, time.Time, error) {
+func (s *jwtService) GenerateTokens(userID, email string, customClaims map[string]any) (string, string, time.Time, error) {
 	if !s.isShortLived() {
 		return "", "", time.Time{}, errors.New("GenerateTokens can only be used with short-lived token configuration")
 	}
@@ -192,7 +192,7 @@ func (s *jwtService) GenerateTokens(userID, email string, customClaims map[strin
 	return accessToken, refreshToken, refreshExp, nil
 }
 
-func (s *jwtService) GenerateToken(userID, email string, customClaims map[string]interface{}) (string, time.Time, error) {
+func (s *jwtService) GenerateToken(userID, email string, customClaims map[string]any) (string, time.Time, error) {
 	tokenCfg := s.getTokenConfig()
 	now := time.Now().UTC()
 
@@ -209,7 +209,7 @@ func (s *jwtService) GenerateToken(userID, email string, customClaims map[string
 	return accessToken, tokenExp, nil
 }
 
-func baseClaims(issuer, userID, email string, customClaims map[string]interface{}) jwt.MapClaims {
+func baseClaims(issuer, userID, email string, customClaims map[string]any) jwt.MapClaims {
 	now := time.Now().UTC().Unix()
 	claims := jwt.MapClaims{
 		"sub": userID,
@@ -286,7 +286,7 @@ func (s *jwtService) TokenExistsInCache(ctx context.Context, token string) (bool
 
 func (s *jwtService) ValidateTokenAndGetClaims(tokenString string) (jwt.MapClaims, error) {
 	tokenCfg := s.getTokenConfig()
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		if token.Method != s.signingMethod {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
@@ -307,7 +307,7 @@ func (s *jwtService) IsTokenValid(tokenString string) bool {
 	return err == nil
 }
 
-func (s *jwtService) GetClaim(claims jwt.MapClaims, key string) (interface{}, error) {
+func (s *jwtService) GetClaim(claims jwt.MapClaims, key string) (any, error) {
 	val, ok := claims[key]
 	if !ok {
 		return nil, ErrInvalidClaims
@@ -335,7 +335,7 @@ func GetStringSliceClaim(claims jwt.MapClaims, key string) ([]string, error) {
 	switch v := val.(type) {
 	case []string:
 		return v, nil
-	case []interface{}:
+	case []any:
 		result := make([]string, len(v))
 		for i, x := range v {
 			s, ok := x.(string)

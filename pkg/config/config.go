@@ -16,7 +16,7 @@ type AppConfig struct {
 	Architecture string
 	OS           string
 
-	Extras map[string]interface{}
+	Extras map[string]any
 }
 
 var (
@@ -46,7 +46,7 @@ func Init(cfg *AppConfig) {
 		}
 
 		if cfg.Extras == nil {
-			cfg.Extras = make(map[string]interface{})
+			cfg.Extras = make(map[string]any)
 		}
 		instance = cfg
 	})

@@ -11,7 +11,7 @@ import (
 )
 
 type memoryEntry struct {
-	value      interface{}
+	value      any
 	expiration time.Time
 	createdAt  time.Time
 }
@@ -59,7 +59,7 @@ func (c *memoryCache) Get(_ context.Context, key string) (string, error) {
 	return str, nil
 }
 
-func (c *memoryCache) Set(_ context.Context, key string, value interface{}, ttl time.Duration) error {
+func (c *memoryCache) Set(_ context.Context, key string, value any, ttl time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -208,16 +208,16 @@ func (c *memoryCache) Decrement(ctx context.Context, key string, value int64) (i
 	return c.Increment(ctx, key, -value)
 }
 
-func (c *memoryCache) MGet(_ context.Context, keys ...string) ([]interface{}, error) {
+func (c *memoryCache) MGet(_ context.Context, keys ...string) ([]any, error) {
 	if len(keys) == 0 {
-		return []interface{}{}, nil
+		return []any{}, nil
 	}
 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	now := time.Now()
-	result := make([]interface{}, len(keys))
+	result := make([]any, len(keys))
 
 	for i, key := range keys {
 		item, exists := c.items[key]
@@ -237,7 +237,7 @@ func (c *memoryCache) MGet(_ context.Context, keys ...string) ([]interface{}, er
 	return result, nil
 }
 
-func (c *memoryCache) MSet(_ context.Context, values map[string]interface{}, ttl time.Duration) error {
+func (c *memoryCache) MSet(_ context.Context, values map[string]any, ttl time.Duration) error {
 	if len(values) == 0 {
 		return nil
 	}

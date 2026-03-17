@@ -143,6 +143,59 @@ func TestNoRouteHandler(t *testing.T) {
 	}
 }
 
+func TestXAuthAppTokenMiddleware_EmptyEnvRejectsAll(t *testing.T) {
+	t.Setenv("X_AUTH_APP_TOKEN", "")
+	e := setupEngine(XAuthAppTokenMiddleware())
+
+	// Request with no token — must be rejected when env var is empty.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	e.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("empty env token: expected 401, got %d", w.Code)
+	}
+
+	// Request with empty header value — must also be rejected.
+	w2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req2.Header.Set("X-Auth-App-Token", "")
+	e.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusUnauthorized {
+		t.Errorf("empty env token + empty header: expected 401, got %d", w2.Code)
+	}
+}
+
+func TestXAuthAppTokenMiddleware_ValidToken(t *testing.T) {
+	t.Setenv("X_AUTH_APP_TOKEN", "supersecret")
+	e := setupEngine(XAuthAppTokenMiddleware())
+
+	// Correct token — must pass.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("X-Auth-App-Token", "supersecret")
+	e.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("valid token: expected 200, got %d", w.Code)
+	}
+}
+
+func TestXAuthAppTokenMiddleware_WrongToken(t *testing.T) {
+	t.Setenv("X_AUTH_APP_TOKEN", "supersecret")
+	e := setupEngine(XAuthAppTokenMiddleware())
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("X-Auth-App-Token", "wrongtoken")
+	e.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("wrong token: expected 401, got %d", w.Code)
+	}
+}
+
 func TestHealthEndpoint(t *testing.T) {
 	e := gin.New()
 	e.GET("/health", func(c *gin.Context) {

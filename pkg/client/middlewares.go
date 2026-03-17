@@ -88,8 +88,6 @@ func AppTokenMiddleware() Middleware {
 	}
 }
 
-var CtxKeyIncomingAuth = tokens.AuthContextKey
-
 func AuthMiddleware() Middleware {
 	return func(next http.RoundTripper) http.RoundTripper {
 		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -138,7 +136,7 @@ func CircuitBreakerMiddleware(cfg *CircuitBreakerConfig) Middleware {
 				breaker := cfg.BreakerFor(req.Method, req.URL.Path)
 				if breaker != nil {
 					var resp *http.Response
-					_, err := breaker.Execute(func() (interface{}, error) {
+					_, err := breaker.Execute(func() (any, error) {
 						var err error
 						resp, err = next.RoundTrip(req)
 						if err != nil {
@@ -308,6 +306,27 @@ type metricsTransport struct {
 	requestErrors   *prometheus.CounterVec
 }
 
+func classifyError(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded"):
+		return "timeout"
+	case strings.Contains(msg, "connection refused"):
+		return "connection_refused"
+	case strings.Contains(msg, "no such host") || strings.Contains(msg, "DNS"):
+		return "dns_error"
+	case strings.Contains(msg, "EOF") || strings.Contains(msg, "reset by peer"):
+		return "connection_reset"
+	case strings.Contains(msg, "TLS"):
+		return "tls_error"
+	default:
+		return "other"
+	}
+}
+
 func (t *metricsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	start := time.Now()
 	method := req.Method
@@ -316,7 +335,7 @@ func (t *metricsTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	resp, err := t.next.RoundTrip(req)
 	duration := time.Since(start).Seconds()
 	if err != nil {
-		t.requestErrors.WithLabelValues(method, host, path, err.Error()).Inc()
+		t.requestErrors.WithLabelValues(method, host, path, classifyError(err)).Inc()
 		return nil, err
 	}
 	status := fmt.Sprintf("%d", resp.StatusCode)
@@ -405,7 +424,7 @@ func (t *cacheTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	body, err := ReadAndRestoreBody(resp)
+	body, err := readAndRestoreBody(resp)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response body: %w", err)
 	}
@@ -436,31 +455,7 @@ func defaultCacheKey(r *http.Request) string {
 	return r.Method + ":" + r.URL.String()
 }
 
-type HooksMiddlewareConfig struct {
-	PreRequest  func(req *http.Request)
-	PostRequest func(req *http.Request, resp *http.Response)
-	OnError     func(req *http.Request, err error)
-}
-
-func HooksMiddleware(cfg *HooksMiddlewareConfig) Middleware {
-	return func(next http.RoundTripper) http.RoundTripper {
-		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			if cfg != nil && cfg.PreRequest != nil {
-				cfg.PreRequest(req)
-			}
-			resp, err := next.RoundTrip(req)
-			if err != nil && cfg != nil && cfg.OnError != nil {
-				cfg.OnError(req, err)
-			}
-			if resp != nil && cfg != nil && cfg.PostRequest != nil {
-				cfg.PostRequest(req, resp)
-			}
-			return resp, err
-		})
-	}
-}
-
-func ReadAndRestoreBody(resp *http.Response) ([]byte, error) {
+func readAndRestoreBody(resp *http.Response) ([]byte, error) {
 	if resp == nil || resp.Body == nil {
 		return nil, nil
 	}

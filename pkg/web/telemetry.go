@@ -16,16 +16,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-type TelemetryConfig struct {
-	ServiceName    string
-	ServiceVersion string
-	Environment    string
-	TempoEndpoint  string
-	Insecure       bool
-	EnableTracing  bool
-	EnableMetrics  bool
-}
-
 func (app *GinApp) setupTelemetry() error {
 	cfg := config.Get()
 

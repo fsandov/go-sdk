@@ -184,6 +184,8 @@ var sensitiveKeys = map[string]bool{
 	"authorization": true, "api_key": true, "apikey": true,
 	"cookie": true, "access_token": true, "refresh_token": true,
 	"private_key": true, "credit_card": true,
+	"secret_key": true, "client_secret": true,
+	"x_auth_app_token": true, "bearer": true,
 }
 
 func sanitizeFieldsForNotification(fields map[string]any) map[string]any {

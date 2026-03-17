@@ -129,7 +129,7 @@ func (r *redisCache) Get(ctx context.Context, key string) (string, error) {
 	return val, nil
 }
 
-func (r *redisCache) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+func (r *redisCache) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
 	return r.client.Set(ctx, key, value, ttl).Err()
 }
 
@@ -213,13 +213,13 @@ func (r *redisCache) Decrement(ctx context.Context, key string, value int64) (in
 	return result, nil
 }
 
-func (r *redisCache) MGet(ctx context.Context, keys ...string) ([]interface{}, error) {
+func (r *redisCache) MGet(ctx context.Context, keys ...string) ([]any, error) {
 	if ctx == nil {
 		return nil, ErrInvalidContext
 	}
 
 	if len(keys) == 0 {
-		return make([]interface{}, 0), nil
+		return make([]any, 0), nil
 	}
 
 	result, err := r.client.MGet(ctx, keys...).Result()
@@ -236,7 +236,7 @@ func (r *redisCache) MGet(ctx context.Context, keys ...string) ([]interface{}, e
 	return result, nil
 }
 
-func (r *redisCache) MSet(ctx context.Context, values map[string]interface{}, ttl time.Duration) error {
+func (r *redisCache) MSet(ctx context.Context, values map[string]any, ttl time.Duration) error {
 	if len(values) == 0 {
 		return nil
 	}
