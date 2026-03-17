@@ -149,15 +149,18 @@ func GetIPFromContext(c *gin.Context) string {
 
 func clientIP(c *gin.Context) string {
 	remoteAddr := c.Request.RemoteAddr
-	fromCF := IsFromCloudflare(remoteAddr)
 
-	if fromCF {
+	if IsFromCloudflare(remoteAddr) {
 		if cfIP := c.Request.Header.Get("CF-Connecting-IP"); cfIP != "" {
 			return cfIP
 		}
 		if trueClientIP := c.Request.Header.Get("True-Client-IP"); trueClientIP != "" {
 			return trueClientIP
 		}
+	}
+
+	if xClientIP := c.Request.Header.Get("X-Client-IP"); xClientIP != "" {
+		return xClientIP
 	}
 
 	host, _, err := net.SplitHostPort(remoteAddr)
