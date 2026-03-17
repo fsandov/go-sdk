@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.8.0] - 2026-10-14
+- Major fixes
+
 ## [1.7.2] - 2026-03-07
 - Refactor IPPropagationMiddleware to streamline header propagation and clarify comments
 
