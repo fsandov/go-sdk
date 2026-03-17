@@ -31,3 +31,10 @@ func UserHasPermission(c *gin.Context, permission string) bool {
 	}
 	return false
 }
+
+func ExtractOriginalUserAgent(c *gin.Context) string {
+	if ua := c.GetHeader("X-Original-User-Agent"); ua != "" {
+		return ua
+	}
+	return c.Request.UserAgent()
+}

@@ -192,6 +192,12 @@ func GetIPHeadersFromContext(c *gin.Context) map[string]string {
 		headers["X-Client-IP"] = clientIP
 	}
 
+	if ua := c.Request.Header.Get("X-Original-User-Agent"); ua != "" {
+		headers["X-Original-User-Agent"] = ua
+	} else if ua := c.Request.Header.Get("User-Agent"); ua != "" {
+		headers["X-Original-User-Agent"] = ua
+	}
+
 	return headers
 }
 

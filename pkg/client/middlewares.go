@@ -67,6 +67,10 @@ func IPPropagationMiddleware() Middleware {
 				req.Header.Set("X-Forwarded-For", v)
 			}
 
+			if v := getHeaderFromContext(ctx, "X-Original-User-Agent"); v != "" {
+				req.Header.Set("X-Original-User-Agent", v)
+			}
+
 			return next.RoundTrip(req)
 		})
 	}
