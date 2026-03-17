@@ -1,9 +1,12 @@
 # Changelog
 
-## [1.8.2] - 2026-10-14
+## [1.9.0] - 2026-03-17
+- Minor code improvements and refactoring
+
+## [1.8.2] - 2026-03-17
 - Fix issues with User-Agent header propagation
 
-## [1.8.1] - 2026-10-14
+## [1.8.1] - 2026-03-17
 - Fix issues with IP detection
 
 ## [1.8.0] - 2026-10-14
