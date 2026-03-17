@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.8.1] - 2026-10-14
+- Fix issues with IP detection
+
 ## [1.8.0] - 2026-10-14
 - Major fixes
 
