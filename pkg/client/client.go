@@ -154,7 +154,21 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 		backoffStrategy = func(attempt int) time.Duration { return 200 * time.Millisecond }
 	}
 
+	var bodyBytes []byte
+	if req.Body != nil {
+		var readErr error
+		bodyBytes, readErr = io.ReadAll(req.Body)
+		if readErr != nil {
+			return nil, &Error{Err: readErr, Method: req.Method, URL: req.URL.String()}
+		}
+		req.Body.Close()
+	}
+
 	for retry = 0; retry <= cfg.MaxRetries; retry++ {
+		if bodyBytes != nil {
+			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			req.ContentLength = int64(len(bodyBytes))
+		}
 		resp, err = c.httpClient.Do(req)
 		if !shouldRetry(resp, err) {
 			break

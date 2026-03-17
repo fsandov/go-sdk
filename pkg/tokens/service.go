@@ -220,7 +220,14 @@ func baseClaims(issuer, userID, email string, customClaims map[string]interface{
 	if email != "" {
 		claims["email"] = email
 	}
+	reserved := map[string]bool{
+		"sub": true, "iss": true, "iat": true,
+		"nbf": true, "exp": true, "typ": true,
+	}
 	for k, v := range customClaims {
+		if reserved[k] {
+			continue
+		}
 		claims[k] = v
 	}
 	return claims
@@ -284,7 +291,7 @@ func (s *jwtService) ValidateTokenAndGetClaims(tokenString string) (jwt.MapClaim
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return []byte(tokenCfg.SecretKey), nil
-	})
+	}, jwt.WithIssuer(tokenCfg.Issuer))
 	if err != nil || !token.Valid {
 		return nil, ErrInvalidToken
 	}

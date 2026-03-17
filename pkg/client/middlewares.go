@@ -36,7 +36,13 @@ func RequestIDMiddleware() Middleware {
 	return func(next http.RoundTripper) http.RoundTripper {
 		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.Header.Get("X-Request-ID") == "" {
-				req.Header.Set("X-Request-ID", uuid.New().String())
+				// Prefer the request ID propagated by the server middleware so
+				// the full inbound→outbound chain shares the same trace ID.
+				if id, ok := req.Context().Value(RequestIDContextKey{}).(string); ok && id != "" {
+					req.Header.Set("X-Request-ID", id)
+				} else {
+					req.Header.Set("X-Request-ID", uuid.New().String())
+				}
 			}
 			return next.RoundTrip(req)
 		})
@@ -467,13 +473,35 @@ func MaxResponseSizeMiddleware(maxSize int64) Middleware {
 	return func(next http.RoundTripper) http.RoundTripper {
 		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			resp, err := next.RoundTrip(req)
-			if err != nil || maxSize <= 0 || resp == nil || resp.Body == nil {
+			if err != nil || resp == nil {
 				return resp, err
 			}
-			resp.Body = io.NopCloser(io.LimitReader(resp.Body, maxSize))
-			return resp, err
+			resp.Body = &limitedReadCloser{
+				ReadCloser: resp.Body,
+				remaining:  maxSize,
+				maxSize:    maxSize,
+			}
+			return resp, nil
 		})
 	}
+}
+
+type limitedReadCloser struct {
+	io.ReadCloser
+	remaining int64
+	maxSize   int64
+}
+
+func (l *limitedReadCloser) Read(p []byte) (int, error) {
+	if l.remaining <= 0 {
+		return 0, fmt.Errorf("response body exceeds %d bytes limit", l.maxSize)
+	}
+	if int64(len(p)) > l.remaining {
+		p = p[:l.remaining]
+	}
+	n, err := l.ReadCloser.Read(p)
+	l.remaining -= int64(n)
+	return n, err
 }
 
 type ContextKey string
@@ -482,9 +510,46 @@ const (
 	IPHeadersContextKey ContextKey = "ip_headers"
 )
 
+// RequestIDContextKey is the context key used to propagate the inbound
+// X-Request-ID value from the server middleware (pkg/web) down to outbound
+// HTTP calls made through pkg/client.  It is defined here (not in pkg/web)
+// to prevent a circular import, following the same pattern as IPHeadersContextKey.
+type RequestIDContextKey struct{}
+
+// userIDContextKey is the context key used to propagate the authenticated user ID
+// from server middleware down to outbound HTTP calls made through pkg/client.
+// Defined here (not in pkg/web) to prevent a circular import.
+type userIDContextKey struct{}
+
+// permissionsContextKey is the context key used to propagate user permissions
+// from server middleware down to outbound HTTP calls made through pkg/client.
+// Defined here (not in pkg/web) to prevent a circular import.
+type permissionsContextKey struct{}
+
+// UserIDContextKey is used to propagate user ID through context.Context.
+var UserIDContextKey = userIDContextKey{}
+
+// PermissionsContextKey is used to propagate user permissions through context.Context.
+var PermissionsContextKey = permissionsContextKey{}
+
 func getHeaderFromContext(ctx context.Context, headerName string) string {
 	if headers, ok := ctx.Value(IPHeadersContextKey).(map[string]string); ok {
 		return headers[headerName]
 	}
 	return ""
+}
+
+// UserContextMiddleware propagates user context (ID and permissions) as HTTP headers.
+func UserContextMiddleware() Middleware {
+	return func(next http.RoundTripper) http.RoundTripper {
+		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if uid, ok := req.Context().Value(UserIDContextKey).(string); ok && uid != "" {
+				req.Header.Set("X-User-ID", uid)
+			}
+			if perms, ok := req.Context().Value(PermissionsContextKey).([]string); ok && len(perms) > 0 {
+				req.Header.Set("X-User-Permissions", strings.Join(perms, ","))
+			}
+			return next.RoundTrip(req)
+		})
+	}
 }

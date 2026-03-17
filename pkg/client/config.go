@@ -20,7 +20,8 @@ type EndpointSettings struct {
 	Headers         map[string]string
 	RequireAuth     bool
 	RateLimiter     *rate.Limiter
-	Breaker         *gobreaker.CircuitBreaker
+	// Deprecated: use WithCircuitBreaker middleware instead. This field is not used by Do().
+	Breaker *gobreaker.CircuitBreaker
 	AuthTokenFn     func(*RequestInfo) (string, error)
 	EnableCache     bool
 	CacheTTL        time.Duration

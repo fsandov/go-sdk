@@ -2,10 +2,10 @@ package web
 
 import (
 	"context"
+	"crypto/subtle"
 	"net"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/fsandov/go-sdk/pkg/client"
 	"github.com/fsandov/go-sdk/pkg/env"
@@ -50,7 +50,7 @@ func (app *GinApp) setupMiddleware() {
 			corsConfig.AllowAllOrigins = true
 		}
 		corsConfig.AllowCredentials = !corsConfig.AllowAllOrigins
-		corsConfig.AllowHeaders = append(corsConfig.AllowHeaders, "Authorization", "X-Request-ID", "X-Auth-App-Token")
+		corsConfig.AllowHeaders = append(corsConfig.AllowHeaders, "Authorization", "X-Request-ID")
 		app.engine.Use(cors.New(corsConfig))
 	}
 
@@ -83,7 +83,7 @@ func (app *GinApp) setupMiddleware() {
 func XAuthAppTokenMiddleware() gin.HandlerFunc {
 	appToken := os.Getenv("X_AUTH_APP_TOKEN")
 	return func(c *gin.Context) {
-		if c.GetHeader("X-Auth-App-Token") != appToken {
+		if subtle.ConstantTimeCompare([]byte(c.GetHeader("X-Auth-App-Token")), []byte(appToken)) != 1 {
 			c.AbortWithStatusJSON(401, gin.H{"error": "Unauthorized"})
 			return
 		}
@@ -100,6 +100,10 @@ func RequestIDMiddleware() gin.HandlerFunc {
 
 		c.Set("request_id", requestID)
 		c.Writer.Header().Set("X-Request-ID", requestID)
+
+		ctx := context.WithValue(c.Request.Context(), client.RequestIDContextKey{}, requestID)
+		c.Request = c.Request.WithContext(ctx)
+
 		c.Next()
 	}
 }
@@ -113,8 +117,10 @@ func SecureHeadersMiddleware() gin.HandlerFunc {
 		c.Writer.Header().Set("X-Content-Type-Options", "nosniff")
 		c.Writer.Header().Set("X-Frame-Options", "DENY")
 		c.Writer.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		c.Writer.Header().Set("X-XSS-Protection", "1; mode=block")
+		c.Writer.Header().Set("X-XSS-Protection", "0")
 		c.Writer.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		c.Header("Cache-Control", "no-store")
 		c.Next()
 	}
 }
@@ -154,17 +160,11 @@ func clientIP(c *gin.Context) string {
 		}
 	}
 
-	if fwdFor := c.Request.Header.Get("X-Forwarded-For"); fwdFor != "" {
-		ips := strings.Split(fwdFor, ",")
-		if len(ips) > 0 {
-			return strings.TrimSpace(ips[0])
-		}
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return remoteAddr
 	}
-
-	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
-		return host
-	}
-	return remoteAddr
+	return host
 }
 
 func GetIPHeadersFromContext(c *gin.Context) map[string]string {

@@ -18,6 +18,3 @@ func WithNotifier() LogOption {
 	return withNotifierOption{}
 }
 
-func WithNotifyTarget(targets ...string) LogOption {
-	return withNotifierOption{}
-}

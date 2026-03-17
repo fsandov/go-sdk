@@ -13,6 +13,7 @@ import (
 type memoryEntry struct {
 	value      interface{}
 	expiration time.Time
+	createdAt  time.Time
 }
 
 type sortedSetItem struct {
@@ -26,6 +27,7 @@ type memoryCache struct {
 	sortedSets map[string][]sortedSetItem
 	stopGC     chan struct{}
 	closed     bool
+	maxEntries int
 }
 
 func NewMemoryCache() Cache {
@@ -33,6 +35,7 @@ func NewMemoryCache() Cache {
 		items:      make(map[string]memoryEntry),
 		sortedSets: make(map[string][]sortedSetItem),
 		stopGC:     make(chan struct{}),
+		maxEntries: 10000,
 	}
 	go c.startGC()
 	return c
@@ -60,11 +63,15 @@ func (c *memoryCache) Set(_ context.Context, key string, value interface{}, ttl 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.maxEntries > 0 && len(c.items) >= c.maxEntries {
+		c.evictOldest()
+	}
+
 	var exp time.Time
 	if ttl > 0 {
 		exp = time.Now().Add(ttl)
 	}
-	c.items[key] = memoryEntry{value: value, expiration: exp}
+	c.items[key] = memoryEntry{value: value, expiration: exp, createdAt: time.Now()}
 	return nil
 }
 
@@ -348,6 +355,22 @@ func (c *memoryCache) ZRange(_ context.Context, key string, start, stop int64) (
 	}
 
 	return result, nil
+}
+
+func (c *memoryCache) evictOldest() {
+	var oldestKey string
+	var oldestTime time.Time
+	first := true
+	for k, v := range c.items {
+		if first || v.createdAt.Before(oldestTime) {
+			oldestKey = k
+			oldestTime = v.createdAt
+			first = false
+		}
+	}
+	if oldestKey != "" {
+		delete(c.items, oldestKey)
+	}
 }
 
 func (c *memoryCache) startGC() {

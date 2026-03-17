@@ -3,6 +3,7 @@ package logs
 import (
 	"context"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -158,7 +159,7 @@ func (l *Logger) sendNotifications(ctx context.Context, level, msg string, field
 		}
 	}
 
-	fieldMap := fieldsToMap(fields)
+	fieldMap := sanitizeFieldsForNotification(fieldsToMap(fields))
 	var batchWg sync.WaitGroup
 	for _, notifier := range notifiersForLevel {
 		l.wg.Add(1)
@@ -176,6 +177,29 @@ func (l *Logger) sendNotifications(ctx context.Context, level, msg string, field
 		batchWg.Wait()
 		cancel()
 	}()
+}
+
+var sensitiveKeys = map[string]bool{
+	"token": true, "password": true, "secret": true,
+	"authorization": true, "api_key": true, "apikey": true,
+	"cookie": true, "access_token": true, "refresh_token": true,
+	"private_key": true, "credit_card": true,
+}
+
+func sanitizeFieldsForNotification(fields map[string]any) map[string]any {
+	sanitized := make(map[string]any, len(fields))
+	for k, v := range fields {
+		if sensitiveKeys[strings.ToLower(k)] {
+			sanitized[k] = "[REDACTED]"
+			continue
+		}
+		if s, ok := v.(string); ok && len(s) > 200 {
+			sanitized[k] = s[:200] + "...[truncated]"
+			continue
+		}
+		sanitized[k] = v
+	}
+	return sanitized
 }
 
 func fieldsToMap(fields []zap.Field) map[string]any {

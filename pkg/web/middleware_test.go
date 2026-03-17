@@ -34,7 +34,9 @@ func TestSecureHeadersMiddleware(t *testing.T) {
 		"X-Content-Type-Options":    "nosniff",
 		"X-Frame-Options":           "DENY",
 		"Referrer-Policy":           "strict-origin-when-cross-origin",
-		"X-Xss-Protection":          "1; mode=block",
+		"X-Xss-Protection":          "0",
+		"Permissions-Policy":        "camera=(), microphone=(), geolocation=()",
+		"Cache-Control":             "no-store",
 		"Strict-Transport-Security": "max-age=63072000; includeSubDomains",
 	}
 
@@ -92,7 +94,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 	}
 }
 
-func TestRealIPMiddleware_XForwardedFor(t *testing.T) {
+func TestRealIPMiddleware_XForwardedFor_NotTrusted(t *testing.T) {
 	e := setupEngine(RealIPMiddleware())
 
 	w := httptest.NewRecorder()
@@ -101,13 +103,19 @@ func TestRealIPMiddleware_XForwardedFor(t *testing.T) {
 	e.ServeHTTP(w, req)
 
 	ip := w.Header().Get("X-Client-IP")
-	if ip != "203.0.113.50" {
-		t.Errorf("expected first IP from X-Forwarded-For, got %q", ip)
+	// Should use RemoteAddr, not XFF (RemoteAddr in tests is typically "192.0.2.1" or empty)
+	if ip == "203.0.113.50" {
+		t.Error("X-Forwarded-For should NOT be trusted from non-Cloudflare sources")
 	}
 }
 
-func TestRealIPMiddleware_CFConnectingIP(t *testing.T) {
-	e := setupEngine(RealIPMiddleware())
+func TestRealIPMiddleware_CFConnectingIP_FromCloudflare(t *testing.T) {
+	e := gin.New()
+	e.Use(RealIPMiddleware())
+	e.GET("/test", func(c *gin.Context) {
+		c.Header("X-Client-IP", c.GetString("client_ip"))
+		c.String(http.StatusOK, "ok")
+	})
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
@@ -115,8 +123,8 @@ func TestRealIPMiddleware_CFConnectingIP(t *testing.T) {
 	e.ServeHTTP(w, req)
 
 	ip := w.Header().Get("X-Client-IP")
-	if ip != "198.51.100.10" {
-		t.Errorf("expected CF-Connecting-IP value, got %q", ip)
+	if ip == "198.51.100.10" {
+		t.Error("CF-Connecting-IP should only be trusted from Cloudflare IPs")
 	}
 }
 

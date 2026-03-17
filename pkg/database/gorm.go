@@ -4,31 +4,35 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"time"
 
+	"github.com/fsandov/go-sdk/pkg/env"
 	"github.com/fsandov/go-sdk/pkg/logs"
 	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 type Config struct {
-	Enabled     bool
-	Dialect     string
-	DSN         string
-	Host        string
-	Port        string
-	User        string
-	Password    string
-	DBName      string
-	SSLMode     string
-	MaxIdle     int
-	MaxOpen     int
-	MaxLifetime time.Duration
+	Enabled        bool
+	Dialect        string
+	DSN            string
+	Host           string
+	Port           string
+	User           string
+	Password       string
+	DBName         string
+	SSLMode        string
+	MaxIdle        int
+	MaxOpen        int
+	MaxLifetime    time.Duration
+	MultiStatements bool
 }
 
 var DefaultMySqlConfig = Config{
@@ -120,7 +124,21 @@ func Open(cfg Config, opts *Options) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	gormConfig := &gorm.Config{}
+	logLevel := gormlogger.Warn
+	if env.IsLocal() {
+		logLevel = gormlogger.Info
+	}
+
+	gormConfig := &gorm.Config{
+		Logger: gormlogger.New(
+			log.New(os.Stdout, "\r\n", log.LstdFlags),
+			gormlogger.Config{
+				SlowThreshold:             200 * time.Millisecond,
+				LogLevel:                  logLevel,
+				IgnoreRecordNotFoundError: true,
+			},
+		),
+	}
 	var db *gorm.DB
 
 	for i := 0; i <= opts.MaxRetries; i++ {
@@ -156,6 +174,7 @@ func Open(cfg Config, opts *Options) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(cfg.MaxIdle)
 	sqlDB.SetMaxOpenConns(cfg.MaxOpen)
 	sqlDB.SetConnMaxLifetime(cfg.MaxLifetime)
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	err = sqlDB.PingContext(ctx)
@@ -189,7 +208,9 @@ func buildDSN(cfg Config) (string, error) {
 		q.Set("charset", "utf8mb4")
 		q.Set("parseTime", "true")
 		q.Set("loc", "Local")
-		q.Set("multiStatements", "true")
+		if cfg.MultiStatements {
+			q.Set("multiStatements", "true")
+		}
 
 		return fmt.Sprintf(
 			"%s:%s@tcp(%s:%s)/%s?%s",
