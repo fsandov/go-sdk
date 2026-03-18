@@ -163,6 +163,10 @@ func clientIP(c *gin.Context) string {
 		return xClientIP
 	}
 
+	if origClientIP := c.Request.Header.Get("X-Original-Client-IP"); origClientIP != "" {
+		return origClientIP
+	}
+
 	host, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
 		return remoteAddr
