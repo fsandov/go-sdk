@@ -11,6 +11,7 @@ import (
 
 	"github.com/fsandov/go-sdk/pkg/env"
 	"github.com/fsandov/go-sdk/pkg/logs"
+	"github.com/uptrace/opentelemetry-go-extra/otelgorm"
 	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
@@ -175,6 +176,10 @@ func Open(cfg Config, opts *Options) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(cfg.MaxOpen)
 	sqlDB.SetConnMaxLifetime(cfg.MaxLifetime)
 	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
+
+	if err := db.Use(otelgorm.NewPlugin()); err != nil {
+		log.Printf("database: failed to register OTEL plugin: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	err = sqlDB.PingContext(ctx)

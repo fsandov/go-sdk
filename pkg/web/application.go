@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
@@ -49,6 +50,11 @@ type GinConfig struct {
 }
 
 func DefaultGinConfig() *GinConfig {
+	otelEndpoint := os.Getenv("OTEL_ENDPOINT")
+	if otelEndpoint == "" {
+		otelEndpoint = "otel-collector:4317"
+	}
+
 	if env.IsRemote() {
 		return &GinConfig{
 			Port:                "8080",
@@ -58,7 +64,7 @@ func DefaultGinConfig() *GinConfig {
 			ShutdownTimeout:     10 * time.Second,
 			MaxHeaderBytes:      1 << 20,
 			EnablePprof:         false,
-			EnableMetrics:       false,
+			EnableMetrics:       true,
 			EnableRequestID:     true,
 			EnableRecovery:      true,
 			EnableCompression:   true,
@@ -66,7 +72,7 @@ func DefaultGinConfig() *GinConfig {
 			EnableTracing:       true,
 			EnableGinPagination: true,
 			EnableXAuthAppToken: true,
-			OTELEndpoint:        "otel-collector:4318",
+			OTELEndpoint:        otelEndpoint,
 		}
 	}
 
@@ -86,7 +92,7 @@ func DefaultGinConfig() *GinConfig {
 		EnableTracing:       false,
 		EnableGinPagination: true,
 		EnableXAuthAppToken: true,
-		OTELEndpoint:        "otel-collector:4318",
+		OTELEndpoint:        otelEndpoint,
 	}
 }
 
@@ -104,15 +110,15 @@ func New(config *GinConfig) *GinApp {
 		ginConfig: *config,
 	}
 
-	app.setupRoutes()
-	app.setupMiddleware()
-	app.startupLog()
-
-	if app.ginConfig.EnableTracing {
+	if app.ginConfig.EnableTracing || app.ginConfig.EnableMetrics {
 		if err := app.setupTelemetry(); err != nil {
 			app.logger.Error(context.Background(), "Failed to setup telemetry", zap.Error(err))
 		}
 	}
+
+	app.setupRoutes()
+	app.setupMiddleware()
+	app.startupLog()
 
 	return app
 }
@@ -165,7 +171,9 @@ func (app *GinApp) Run() error {
 }
 
 func (app *GinApp) Shutdown(ctx context.Context) error {
-	app.ShutdownTelemetry(ctx)
+	if err := app.ShutdownTelemetry(ctx); err != nil {
+		app.logger.Warn(context.Background(), "Telemetry shutdown error", zap.Error(err))
+	}
 	if app.httpServer != nil {
 		return app.httpServer.Shutdown(ctx)
 	}

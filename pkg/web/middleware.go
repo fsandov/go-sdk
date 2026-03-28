@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/fsandov/go-sdk/pkg/client"
+	"github.com/fsandov/go-sdk/pkg/config"
 	"github.com/fsandov/go-sdk/pkg/env"
 	"github.com/fsandov/go-sdk/pkg/logs"
 	"github.com/fsandov/go-sdk/pkg/paginate"
@@ -15,7 +16,8 @@ import (
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/penglongli/gin-metrics/ginmetrics"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 func (app *GinApp) setupMiddleware() {
@@ -27,6 +29,10 @@ func (app *GinApp) setupMiddleware() {
 	app.engine.NoMethod(func(c *gin.Context) {
 		c.JSON(http.StatusMethodNotAllowed, gin.H{"error": "method not allowed"})
 	})
+
+	if app.ginConfig.EnableTracing {
+		app.engine.Use(otelgin.Middleware(config.Get().AppName))
+	}
 
 	if app.ginConfig.EnableRequestID {
 		app.engine.Use(RequestIDMiddleware())
@@ -59,11 +65,7 @@ func (app *GinApp) setupMiddleware() {
 	}
 
 	if app.ginConfig.EnableMetrics {
-		m := ginmetrics.GetMonitor()
-		m.SetMetricPath("/metrics")
-		m.SetSlowTime(10)
-		m.SetDuration([]float64{0.1, 0.3, 1.2, 5, 10})
-		m.Use(app.engine)
+		app.engine.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	}
 
 	if app.ginConfig.EnableGinPagination {

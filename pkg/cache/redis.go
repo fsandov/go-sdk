@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -98,6 +100,13 @@ func NewRedisCacheFromConfig(cfg RedisConfig, opts ...RedisOption) (Cache, error
 			opt(options)
 		}
 		client = redis.NewClient(options)
+	}
+
+	if err := redisotel.InstrumentTracing(client); err != nil {
+		log.Printf("redis: failed to instrument tracing: %v", err)
+	}
+	if err := redisotel.InstrumentMetrics(client); err != nil {
+		log.Printf("redis: failed to instrument metrics: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
