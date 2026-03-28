@@ -1,6 +1,20 @@
-
+# Binaries
+*.exe
 *.test
+*.dll
+*.so
+*.dylib
+
+# Coverage
 *.out
 coverage
+
+# IDE
 .idea/
 .vscode/
+
+# Env
+.env
+
+# Claude Code
+CLAUDE.md

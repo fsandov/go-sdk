@@ -5,94 +5,93 @@ on:
     types:
       - closed
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   if_merged:
-    if: github.event.pull_request.merged && contains(github.event.pull_request.base.ref, 'main') && contains(github.event.pull_request.head.ref, 'release')
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main' &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TOKEN_ACTIONS }}
 
       - name: Extract version from branch name
         id: extract_version
+        env:
+          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
         run: |
-          BRANCH_NAME=${{ github.event.pull_request.head.ref }}
           if [[ "$BRANCH_NAME" =~ ^release\/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             VERSION=${BRANCH_NAME#release/}
-            echo "VERSION=$VERSION" >> $GITHUB_ENV
+            echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           else
             echo "Branch name does not match the release pattern."
             exit 1
           fi
 
-      - name: Create Tag
-        id: create_tag
+      - name: Create and push tag
         run: |
-          git config --global user.name 'github-actions'
-          git config --global user.email 'github-actions@github.com'
-          git tag v$VERSION
-          git push origin v$VERSION
-        env:
-          VERSION: ${{ env.VERSION }}
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
 
       - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN_ACTIONS }}
-        with:
-          tag_name: v${{ env.VERSION }}
-          release_name: Release v${{ env.VERSION }}
-          body: |
-            ## Changes in this release
-            Please refer to the [PR description](${{ github.event.pull_request.html_url }}) for detailed information on the changes included in this release.
-          draft: false
-          prerelease: false
+          GH_TOKEN: ${{ secrets.TOKEN_ACTIONS }}
+        run: |
+          gh release create "v$VERSION" \
+            --title "Release v$VERSION" \
+            --generate-notes
 
-      - name: Create comment with release information
-        uses: peter-evans/create-or-update-comment@v4
+      - name: Comment on PR
+        uses: actions/github-script@v7
         with:
-          issue-number: ${{ github.event.pull_request.number }}
           token: ${{ secrets.TOKEN_ACTIONS }}
-          body: |
-            ### Release Information - [${{ github.repository }}](https://github.com/${{ github.repository }})
-            A new release has been created with the following details:
-            - **Changes**: Refer to the [PR description](${{ github.event.pull_request.html_url }}) for detailed information.
-            - **Version**: [Release v${{ env.VERSION }}](https://github.com/${{ github.repository }}/releases/tag/v${{ env.VERSION }})
-            - **Discord Notification**: Sent
-
-            Thank you for your contributions! 🚀
-          reactions: 'rocket'
+          script: |
+            const version = process.env.VERSION;
+            const repo = `${context.repo.owner}/${context.repo.repo}`;
+            const url = `https://github.com/${repo}/releases/tag/v${version}`;
+            const body = [
+              `### Release Information - [${repo}](https://github.com/${repo})`,
+              `A new release has been created:`,
+              `- **Version**: [Release v${version}](${url})`,
+              `- **Changes**: Refer to the [PR description](${context.payload.pull_request.html_url})`,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body
+            });
 
       - name: Send notification to Discord
-        run: |
-          VERSION=${{ env.VERSION }}
-          REPO_URL="https://github.com/${{ github.repository }}"
-          DISCORD_MESSAGE=$(cat <<EOF
-          {
-            "content": "### Release Information - [${{ github.repository }}]($REPO_URL)\nA new release has been created with the following details:\n- **Version**: v$VERSION\n- **Changes**: Refer to the [PR description](${{ github.event.pull_request.html_url }}) for detailed information.\n- **Version Link**: [Release v$VERSION](https://github.com/${{ github.repository }}/releases/tag/v$VERSION)\n- **Discord Notification**: Sent\n\nThank you for your contributions! 🚀",
-            "username": "Release Bot"
-          }
-          EOF
-          )
-          curl -H "Content-Type: application/json" \
-               -d "$DISCORD_MESSAGE" \
-               ${{ secrets.DISCORD_WEBHOOK_URL }}
-
-      - name: Check if branch exists
-        id: check_branch
-        run: |
-          BRANCH_NAME=${{ github.event.pull_request.head.ref }}
-          if git ls-remote --exit-code origin $BRANCH_NAME; then
-            echo "branch_exists=true" >> $GITHUB_ENV
-          else
-            echo "branch_exists=false" >> $GITHUB_ENV
-          fi
-
-      - name: Delete branch
-        if: env.branch_exists == 'true'
-        run: |
-          BRANCH_NAME=${{ github.event.pull_request.head.ref }}
-          git push origin --delete $BRANCH_NAME
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN_ACTIONS }}
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          REPO_URL="https://github.com/${{ github.repository }}"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/v${VERSION}"
+          payload=$(jq -n \
+            --arg repo "${{ github.repository }}" \
+            --arg v "$VERSION" \
+            --arg pr "${{ github.event.pull_request.html_url }}" \
+            --arg rel "$RELEASE_URL" \
+            '{
+              username: "Release Bot",
+              content: "### Release Information - [\($repo)](https://github.com/\($repo))\n- **Version**: v\($v)\n- **PR**: \($pr)\n- **Release**: \($rel)"
+            }')
+          curl -sS -H "Content-Type: application/json" -d "$payload" "$WEBHOOK_URL"
+
+      - name: Delete release branch
+        env:
+          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if git ls-remote --exit-code origin "$BRANCH_NAME" >/dev/null 2>&1; then
+            git push origin --delete "$BRANCH_NAME"
+          fi

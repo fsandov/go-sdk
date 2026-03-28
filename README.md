@@ -1,6 +1,7 @@
 # go-sdk
 
-Shared Go SDK for microservices. Provides config, logging, HTTP client, cache, tokens, web (Gin), and observability.
+Libreria Go para microservicios. Config, logging (zap), HTTP client (circuit breaker + retry), cache (Redis + memory), JWT, web (Gin), OTEL y Prometheus.
+
 
 ## Install
 
