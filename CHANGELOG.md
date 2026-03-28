@@ -1,6 +1,10 @@
 # Changelog
 
-## [1.9.1] - 2026-10-14
+## [1.10.0] - 2026-03-28
+- CI Standard
+- Otel implementation
+
+## [1.9.1] - 2026-03-14
 - Fix issues with IP detection
 
 ## [1.9.0] - 2026-03-17
