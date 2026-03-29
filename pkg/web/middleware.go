@@ -60,12 +60,12 @@ func (app *GinApp) setupMiddleware() {
 		app.engine.Use(cors.New(corsConfig))
 	}
 
-	if app.ginConfig.EnableCompression {
-		app.engine.Use(gzip.Gzip(gzip.DefaultCompression))
-	}
-
 	if app.ginConfig.EnableMetrics {
 		app.engine.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	}
+
+	if app.ginConfig.EnableCompression {
+		app.engine.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPaths([]string{"/metrics"})))
 	}
 
 	if app.ginConfig.EnableGinPagination {
