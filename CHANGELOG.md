@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.10.1] - 2026-03-28
+- Fix metrics compression
+
 ## [1.10.0] - 2026-03-28
 - CI Standard
 - Otel implementation
