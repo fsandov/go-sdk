@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/fsandov/go-sdk/pkg/client"
 	"github.com/fsandov/go-sdk/pkg/config"
@@ -16,6 +18,7 @@ import (
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
@@ -61,6 +64,7 @@ func (app *GinApp) setupMiddleware() {
 	}
 
 	if app.ginConfig.EnableMetrics {
+		app.engine.Use(httpServerMetricsMiddleware())
 		app.engine.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	}
 
@@ -112,6 +116,85 @@ func RequestIDMiddleware() gin.HandlerFunc {
 
 func generateRequestID() string {
 	return uuid.New().String()
+}
+
+var (
+	httpServerRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_server_requests_total",
+			Help: "Total number of HTTP requests handled by the server",
+		},
+		[]string{"method", "path", "status"},
+	)
+	httpServerRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "http_server_request_duration_seconds",
+			Help:    "HTTP request duration in seconds",
+			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+		},
+		[]string{"method", "path", "status"},
+	)
+	httpServerRequestsInFlight = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "http_server_requests_in_flight",
+			Help: "Number of HTTP requests currently being processed",
+		},
+	)
+	httpServerResponseSize = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "http_server_response_size_bytes",
+			Help:    "HTTP response size in bytes",
+			Buckets: []float64{100, 1000, 5000, 10000, 50000, 100000, 500000, 1000000},
+		},
+		[]string{"method", "path", "status"},
+	)
+	httpServerPanicsTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "http_server_panics_total",
+			Help: "Total number of panics recovered by the server",
+		},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(
+		httpServerRequestsTotal,
+		httpServerRequestDuration,
+		httpServerRequestsInFlight,
+		httpServerResponseSize,
+		httpServerPanicsTotal,
+	)
+}
+
+func httpServerMetricsMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		httpServerRequestsInFlight.Inc()
+
+		defer func() {
+			httpServerRequestsInFlight.Dec()
+
+			if r := recover(); r != nil {
+				httpServerPanicsTotal.Inc()
+				panic(r) // re-panic for gin.Recovery() to handle
+			}
+		}()
+
+		c.Next()
+
+		status := strconv.Itoa(c.Writer.Status())
+		path := c.FullPath()
+		if path == "" {
+			path = "unknown"
+		}
+		method := c.Request.Method
+		duration := time.Since(start).Seconds()
+		responseSize := float64(c.Writer.Size())
+
+		httpServerRequestsTotal.WithLabelValues(method, path, status).Inc()
+		httpServerRequestDuration.WithLabelValues(method, path, status).Observe(duration)
+		httpServerResponseSize.WithLabelValues(method, path, status).Observe(responseSize)
+	}
 }
 
 func SecureHeadersMiddleware() gin.HandlerFunc {
